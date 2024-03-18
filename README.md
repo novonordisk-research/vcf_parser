@@ -56,4 +56,4 @@ select (
 ```
 The `.info.CSQ |= map(with_entries(select(.value != null)))` line is used to remove null values from the CSQ field.
 An example of the output
-[!jsonexample.png](./asset/json_example.png)
+![jsonexample.png](./asset/json_example.png)
