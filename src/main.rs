@@ -73,7 +73,11 @@ impl Variant {
                 match vcf_record.header().format(key).unwrap().value_type {
                     vcf::ValueType::Integer => sample_genotype.insert(
                         f_k.to_string(),
-                        Value::Number(Number::from(val.parse::<i64>().unwrap())),
+                        if val == "." {
+                            Value::Null
+                        } else {
+                            Value::Number(Number::from(val.parse::<i64>().unwrap_or_else( |_| panic!("parse error {f_k}, {val}"))))
+                        },
                     ),
                     vcf::ValueType::Float => sample_genotype.insert(
                         f_k.to_string(),
@@ -123,7 +127,11 @@ impl Variant {
                                     .collect::<Vec<Value>>(),
                             )
                         } else {
-                            Value::from(str::from_utf8(&dat[0]).unwrap().parse::<f64>().unwrap())
+                            if str::from_utf8(&dat[0]).unwrap() == "." {
+                                Value::Null
+                            } else {
+                                Value::from(str::from_utf8(&dat[0]).unwrap().parse::<f64>().unwrap_or_else(|_| panic!("parse error {}, {}", field_str, str::from_utf8(&dat[0]).unwrap())))
+                            }
                         }
                     } else if csq_headers.contains_key(field_str) {
                         dat.iter()
