@@ -133,7 +133,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 serde_json::Value::Array(arr) => {
                                     if arr.iter().any(|x| {
                                         if x.is_null() {
-                                            return false;
+                                            if 0. > value.as_f64().unwrap() {
+                                                return true;
+                                            } else {
+                                                return false;
+                                            }
                                         }
                                         x.as_f64().unwrap() > value.as_f64().unwrap()
                                     }) {
@@ -144,7 +148,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        return false;
+                                        if 0. > value.as_f64().unwrap() {
+                                            return true;
+                                        } else {
+                                            return false;
+                                        }
                                     }
                                     if val.as_f64().unwrap() > value.as_f64().unwrap() {
                                         return true;
@@ -160,7 +168,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 serde_json::Value::Array(arr) => {
                                     if arr.iter().any(|x| {
                                         if x.is_null() {
-                                            return false;
+                                            if 0. >= value.as_f64().unwrap() {
+                                                return true;
+                                            } else {
+                                                return false;
+                                            }
                                         }
                                         x.as_f64().unwrap() >= value.as_f64().unwrap()
                                     }) {
@@ -171,7 +183,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        return false;
+                                        if 0. >= value.as_f64().unwrap() {
+                                            return true;
+                                        } else {
+                                            return false;
+                                        }
                                     }
                                     if val.as_f64().unwrap() >= value.as_f64().unwrap() {
                                         return true;
@@ -187,7 +203,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 serde_json::Value::Array(arr) => {
                                     if arr.iter().any(|x| {
                                         if x.is_null() {
-                                            return true;
+                                            if 0. < value.as_f64().unwrap() {
+                                                return true;
+                                            } else {
+                                                return false;
+                                            }
                                         }
                                         x.as_f64().unwrap() < value.as_f64().unwrap()
                                     }) {
@@ -198,7 +218,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        return true;
+                                        if 0. < value.as_f64().unwrap() {
+                                            return true;
+                                        } else {
+                                            return false;
+                                        }
                                     }
                                     if val.as_f64().unwrap() < value.as_f64().unwrap() {
                                         return true;
@@ -214,7 +238,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 serde_json::Value::Array(arr) => {
                                     if arr.iter().any(|x| {
                                         if x.is_null() {
-                                            return true;
+                                            if 0. <= value.as_f64().unwrap() {
+                                                return true;
+                                            } else {
+                                                return false;
+                                            }
                                         }
                                         x.as_f64().unwrap() <= value.as_f64().unwrap()
                                     }) {
@@ -225,7 +253,11 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        return true;
+                                        if 0. <= value.as_f64().unwrap() {
+                                            return true;
+                                        } else {
+                                            return false;
+                                        }
                                     }
                                     if val.as_f64().unwrap() <= value.as_f64().unwrap() {
                                         return true;
