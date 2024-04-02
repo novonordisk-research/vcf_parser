@@ -117,7 +117,11 @@ impl Variant {
                                     .collect::<Vec<Value>>(),
                             )
                         } else {
-                            Value::String(str::from_utf8(&dat[0]).unwrap().to_string())
+                            if dat.len() == 0 {
+                                Value::Null
+                            } else {
+                                Value::String(str::from_utf8(&dat[0]).unwrap().to_string())
+                            }
                         }
                     }
                 }
