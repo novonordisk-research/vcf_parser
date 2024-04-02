@@ -6,15 +6,15 @@ use std::str;
 
 #[derive(Serialize, Deserialize)]
 pub struct Variant {
-    chromosome: String,
-    position: u64,
-    id: Vec<String>,
-    reference: String,
-    alternative: Vec<String>,
-    qual: Option<f64>,
-    filter: Vec<String>,
-    info: Map<String, Value>,
-    genotype: Map<String, Value>,
+    pub chromosome: String,
+    pub position: u64,
+    pub id: Vec<String>,
+    pub reference: String,
+    pub alternative: Vec<String>,
+    pub qual: Option<f64>,
+    pub filter: Vec<String>,
+    pub info: Map<String, Value>,
+    pub genotype: Map<String, Value>,
 }
 
 impl Variant {
@@ -154,6 +154,37 @@ impl Variant {
                 .collect::<Vec<String>>(),
             info,
             genotype,
+        }
+    }
+    pub fn get_value(self: &Self, key: &str) -> Value{
+        // Helper function to recursively search for the key
+        fn search<'a>(value: &'a Value, key: &str, results: &mut Vec<&'a Value>) {
+            match value {
+                Value::Object(map) => {
+                    for (k, v) in map {
+                        if k == key {
+                            results.push(v);
+                        } else {
+                            search(v, key, results);
+                        }
+                    }
+                }
+                Value::Array(arr) => {
+                    for v in arr {
+                        search(v, key, results);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut results = Vec::new();
+        let bind = Value::Object(self.info.clone());
+        search(&bind, key, &mut results);
+        // If only one result, return it directly, otherwise return an array of results
+        if results.len() == 1 {
+            results[0].clone()
+        } else {
+            Value::Array(results.into_iter().cloned().collect())
         }
     }
 }

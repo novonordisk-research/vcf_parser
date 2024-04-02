@@ -3,6 +3,7 @@ use calm_io::stdoutln;
 use clap::Parser;
 use flate2::read::MultiGzDecoder;
 use rayon::prelude::*;
+use core::panic;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -11,7 +12,7 @@ use std::str;
 use vcf::{VCFReader, VCFRecord};
 use crate::variant::Variant;
 
-pub mod variant;
+mod variant;
 
 #[derive(Parser)]
 #[command(version = "0.1.0", about = "Read a .vcf[.gz] and produce json objects per line. CSQ-aware, multiallelic-aware", long_about = None)]
@@ -30,16 +31,219 @@ struct Args {
     filter: String,
 }
 
-
-
-
-
 fn parse_csq_header(header: &str) -> Vec<String> {
     // parse the csq header to produce a list of fields
     header.split(": ").collect::<Vec<&str>>()[1]
         .split("|")
         .map(|x| x.trim().to_string())
         .collect::<Vec<String>>()
+}
+
+fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
+    // filter the variant based on the filters. Filter is like:
+    /*
+    {  
+        "AND":[
+            {
+                "AND":[
+                    {"name":"gnomAD_exome_V4.0_AF","op":"le","value":0.05},
+                    {"name":"gnomAD_genome_V4.0_AF","op":"le","value":0.05}
+                ]
+            },
+            {
+                "OR":[
+                    {"name":"CADD_PHRED","op":"ge","value":20},
+                    {"name":"Lof","op":"ne","value":null}
+                ]
+            }
+        ]
+    }
+    This function is recursive, so it can handle nested AND/OR
+    */
+    match filters {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                if k == "AND" {
+                    match v {
+                        serde_json::Value::Array(vv) => {
+                            if vv.into_iter().all(|x| filter_variant(variant, x)) {
+                                return true;
+                            } else {
+                                return false;
+                            }
+                        }
+                        _ => panic!("AND should be a list of filters"),
+                    }
+                } else if k == "OR" {
+                    match v {
+                        serde_json::Value::Array(vv) => {
+                            if vv.into_iter().any(|x| filter_variant(variant, x)) {
+                                return true;
+                            } else {
+                                return false;
+                            }
+                        }
+                        _ => panic!("OR should be a list of filters"),
+                    }
+                } else {
+                    let name = map["name"].as_str().unwrap();
+                    let op = map["op"].as_str().unwrap();
+                    let value = &map["value"];
+                    let val = variant.get_value(name);
+                    match op {
+                        "eq" => {
+                            match val {
+                                serde_json::Value::Array(arr) => {
+                                    if arr.contains(value) {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                                _ => {
+                                    if val.as_str().unwrap() == value.as_str().unwrap() {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        "ne" => {
+                            match val {
+                                serde_json::Value::Array(arr) => {
+                                    if !arr.contains(value) {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                                _ => {
+                                    if val.as_str().unwrap() != value.as_str().unwrap() {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        "gt" => {
+                            // if val is null, returning false. essentially treat null as 0, and assume value is positive.
+                            match val {
+                                serde_json::Value::Array(arr) => {
+                                    if arr.iter().any(|x| {
+                                        if x.is_null() {
+                                            return false;
+                                        }
+                                        x.as_f64().unwrap() > value.as_f64().unwrap()
+                                    }) {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                                _ => {
+                                    if val.is_null() {
+                                        return false;
+                                    }
+                                    if val.as_f64().unwrap() > value.as_f64().unwrap() {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        "ge" => {
+                            // if val is null, returning false. essentially treat null as 0, and assume value is positive.
+                            match val {
+                                serde_json::Value::Array(arr) => {
+                                    if arr.iter().any(|x| {
+                                        if x.is_null() {
+                                            return false;
+                                        }
+                                        x.as_f64().unwrap() >= value.as_f64().unwrap()
+                                    }) {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                                _ => {
+                                    if val.is_null() {
+                                        return false;
+                                    }
+                                    if val.as_f64().unwrap() >= value.as_f64().unwrap() {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        "lt" => {
+                            // if val is null, returning true. essentially treat null as 0, and assume value is positive.
+                            match val {
+                                serde_json::Value::Array(arr) => {
+                                    if arr.iter().any(|x| {
+                                        if x.is_null() {
+                                            return true;
+                                        }
+                                        x.as_f64().unwrap() < value.as_f64().unwrap()
+                                    }) {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                                _ => {
+                                    if val.is_null() {
+                                        return true;
+                                    }
+                                    if val.as_f64().unwrap() < value.as_f64().unwrap() {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        "le" => {
+                            // if val is null, returning true. essentially treat null as 0, and assume value is positive.
+                            match val {
+                                serde_json::Value::Array(arr) => {
+                                    if arr.iter().any(|x| {
+                                        if x.is_null() {
+                                            return true;
+                                        }
+                                        x.as_f64().unwrap() <= value.as_f64().unwrap()
+                                    }) {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                                _ => {
+                                    if val.is_null() {
+                                        return true;
+                                    }
+                                    if val.as_f64().unwrap() <= value.as_f64().unwrap() {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        _ => panic!("Unknown operator"),
+                    }
+                }
+            };
+            false
+        },
+        serde_json::Value::Null => true,
+        _ => false
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,6 +255,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build_global()
             .unwrap();
     }
+    // read filter if given
+    let filters: serde_json::Value = if args.filter == "-" {
+        serde_json::Value::Null
+    } else {
+        let filter_file = File::open(args.filter)?;
+        serde_yaml::from_reader(filter_file)?
+    };
+    // read input
     let reader: Box<dyn BufRead + Send + Sync> = if args.input == "-" {
         Box::new(BufReader::new(io::stdin()))
     } else if args.input.ends_with(".vcf.gz") {
@@ -81,15 +293,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let line = line.as_bytes() as &[u8];
         let vcf_record = VCFRecord::from_bytes(line, 1, header.clone()).unwrap();
         let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
-        let j = serde_json::to_string(&variant).unwrap();
-        match stdoutln!("{}", j) {
-            Ok(_) => Ok(()),
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::BrokenPipe => std::process::exit(0),
-                _ => Err(e),
-            },
+        if filter_variant(&variant, &filters) {
+            let j = serde_json::to_string(&variant).unwrap();
+            match stdoutln!("{}", j) {
+                Ok(_) => Ok(()),
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::BrokenPipe => std::process::exit(0),
+                    _ => Err(e),
+                },
+            }
+            .unwrap();
         }
-        .unwrap();
+        
     });
     Ok(())
 }
