@@ -101,7 +101,7 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                                     }
                                 }
                                 _ => {
-                                    if val.as_str().unwrap() == value.as_str().unwrap() {
+                                    if val == *value {
                                         return true;
                                     } else {
                                         return false;
@@ -112,14 +112,14 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                         "ne" => {
                             match val {
                                 serde_json::Value::Array(arr) => {
-                                    if !arr.contains(value) {
+                                    if arr.iter().any(|x| x != value) {
                                         return true;
                                     } else {
                                         return false;
                                     }
                                 }
                                 _ => {
-                                    if val.as_str().unwrap() != value.as_str().unwrap() {
+                                    if val != *value {
                                         return true;
                                     } else {
                                         return false;
