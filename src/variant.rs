@@ -67,28 +67,40 @@ impl Variant {
                             Value::Array(
                                 dat.iter()
                                     .map(|x| {
-                                        Value::from(Number::from(
-                                            str::from_utf8(x).unwrap().parse::<i64>().unwrap(),
-                                        ))
+                                        if str::from_utf8(x).unwrap() == "." {
+                                            Value::Null
+                                        } else {
+                                            Value::from(Number::from(
+                                                str::from_utf8(x).unwrap().parse::<i64>().unwrap(),
+                                            ))
+                                        }
                                     })
                                     .collect::<Vec<Value>>(),
                             )
                         } else {
-                            Value::from(str::from_utf8(&dat[0]).unwrap().parse::<i64>().unwrap())
+                            if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
+                                Value::Null
+                            } else {
+                                Value::from(str::from_utf8(&dat[0]).unwrap().parse::<i64>().unwrap())
+                            }
                         }
                     } else if *field.value_type == vcf::ValueType::Float {
                         if *field.number == vcf::Number::Allele {
                             Value::Array(
                                 dat.iter()
                                     .map(|x| {
-                                        Value::from(Number::from_f64(
-                                            str::from_utf8(x).unwrap().parse::<f64>().unwrap(),
-                                        ))
+                                        if str::from_utf8(x).unwrap() == "." {
+                                            Value::Null
+                                        } else {
+                                            Value::from(Number::from_f64(
+                                                str::from_utf8(x).unwrap().parse::<f64>().unwrap(),
+                                            ))
+                                        }
                                     })
                                     .collect::<Vec<Value>>(),
                             )
                         } else {
-                            if str::from_utf8(&dat[0]).unwrap() == "." {
+                            if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
                                 Value::Null
                             } else {
                                 Value::from(str::from_utf8(&dat[0]).unwrap().parse::<f64>().unwrap_or_else(|_| panic!("parse error {}, {}", field_str, str::from_utf8(&dat[0]).unwrap())))

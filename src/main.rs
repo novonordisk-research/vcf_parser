@@ -15,7 +15,7 @@ use crate::variant::Variant;
 mod variant;
 
 #[derive(Parser)]
-#[command(version = "0.1.0", about = "Read a .vcf[.gz] and produce json objects per line. CSQ-aware, multiallelic-aware", long_about = None)]
+#[command(version = "0.1.1", about = "Read a .vcf[.gz] and produce json objects per line. CSQ-aware, multiallelic-aware", long_about = None)]
 #[command(styles=get_styles())]
 struct Args {
     /// input .vcf[.gz] file, or ignore to read from stdin
@@ -29,6 +29,10 @@ struct Args {
     /// filter yaml file to use
     #[arg(short, long, default_value = "-")]
     filter: String,
+
+    /// nested fields with | separator to parse, such as CSQ
+    #[arg(long, value_parser, value_delimiter = ',', default_value = "CSQ,ANN")]
+    fields: Vec<String>,
 }
 
 fn parse_csq_header(header: &str) -> Vec<String> {
@@ -312,7 +316,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info_headers.push(&info_str);
         // if in the description it has 'Format: Allele|' then presume it is a csq header
         let desc = str::from_utf8(reader.header().info(info).unwrap().description).unwrap();
-        if desc.contains(": Allele") {
+        //if desc.contains(": Allele") {
+        if args.fields.contains(&info_str.to_string()) {
             csq_headers.insert(info_str.to_string(), parse_csq_header(desc));
         }
     }
