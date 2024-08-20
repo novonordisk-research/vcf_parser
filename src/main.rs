@@ -167,7 +167,7 @@ fn filter_variant(variant: &Variant, filters: &serde_json::Value) -> bool {
                             }
                         }
                         "ge" => {
-                            // if val is null, returning false. essentially treat null as 0, and assume value is positive.
+                            // if val is null, treat it as 0.
                             match val {
                                 serde_json::Value::Array(arr) => {
                                     if arr.iter().any(|x| {
