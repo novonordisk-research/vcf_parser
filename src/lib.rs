@@ -410,10 +410,10 @@ mod tests {
     
     #[test]
     fn args() {
-        let args = Args::parse_from(&["test", "-i", "test/test.vep.vcf.gz", "-t", "1", "-f", "test.yaml", "--fields", "CSQ"]);
+        let args = Args::parse_from(&["test", "-i", "test/test.vep.vcf.gz", "-t", "1", "-f", "test/test.yaml", "--fields", "CSQ"]);
         assert_eq!(args.input, "test/test.vep.vcf.gz");
         assert_eq!(args.threads, 1);
-        assert_eq!(args.filter, "test.yaml");
+        assert_eq!(args.filter, "test/test.yaml");
         assert_eq!(args.fields, vec!["CSQ".to_string()]);
     }
 }
