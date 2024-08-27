@@ -8,11 +8,11 @@ use std::str;
 pub struct Variant {
     pub chromosome: String,
     pub position: u64,
-    pub id: Vec<String>,
+    pub id: String,
     pub reference: String,
-    pub alternative: Vec<String>,
+    pub alternative: String,
     pub qual: Option<f64>,
-    pub filter: Vec<String>,
+    pub filter: String,
     pub info: Map<String, Value>,
     pub genotype: Map<String, Value>,
 }
@@ -64,7 +64,7 @@ impl Variant {
                         Value::Bool(true)
                     } else if *field.value_type == vcf::ValueType::Integer {
                         if *field.number == vcf::Number::Allele {
-                            Value::Array(
+                            Value::from(
                                 dat.iter()
                                     .map(|x| {
                                         if str::from_utf8(x).unwrap() == "." {
@@ -75,7 +75,7 @@ impl Variant {
                                             ))
                                         }
                                     })
-                                    .collect::<Vec<Value>>(),
+                                    .collect::<Vec<Value>>()[0].clone(),
                             )
                         } else {
                             if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
@@ -86,7 +86,7 @@ impl Variant {
                         }
                     } else if *field.value_type == vcf::ValueType::Float {
                         if *field.number == vcf::Number::Allele {
-                            Value::Array(
+                            Value::from(
                                 dat.iter()
                                     .map(|x| {
                                         if str::from_utf8(x).unwrap() == "." {
@@ -97,7 +97,7 @@ impl Variant {
                                             ))
                                         }
                                     })
-                                    .collect::<Vec<Value>>(),
+                                    .collect::<Vec<Value>>()[0].clone(),
                             )
                         } else {
                             if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
@@ -123,10 +123,10 @@ impl Variant {
                             .collect::<Value>()
                     } else {
                         if *field.number == vcf::Number::Allele {
-                            Value::Array(
+                            Value::from(
                                 dat.iter()
                                     .map(|x| Value::String(str::from_utf8(x).unwrap().to_string()))
-                                    .collect::<Vec<Value>>(),
+                                    .collect::<Vec<Value>>()[0].clone(),
                             )
                         } else {
                             if dat.len() == 0 {
@@ -155,19 +155,19 @@ impl Variant {
                 .id
                 .iter()
                 .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>(),
+                .collect::<Vec<String>>().join(";"),
             reference: str::from_utf8(&vcf_record.reference).unwrap().to_string(),
             alternative: vcf_record
                 .alternative
                 .iter()
                 .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>(),
+                .collect::<Vec<String>>().join(","),
             qual: vcf_record.qual,
             filter: vcf_record
                 .filter
                 .iter()
                 .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>(),
+                .collect::<Vec<String>>().join(","),
             info,
             genotype,
         }
