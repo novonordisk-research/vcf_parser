@@ -4,6 +4,8 @@ use vcf::VCFRecord;
 use std::collections::HashMap;
 use std::str;
 
+serde_with::with_prefix!(prefix_info "info.");
+
 #[derive(Serialize, Deserialize)]
 pub struct Variant {
     pub chromosome: String,
@@ -13,8 +15,9 @@ pub struct Variant {
     pub alternative: String,
     pub qual: Option<f64>,
     pub filter: String,
+    #[serde(flatten, with="prefix_info")]
     pub info: Map<String, Value>,
-    pub genotype: Map<String, Value>,
+    pub genotype: Option<Map<String, Value>>,
 }
 
 impl Variant {
@@ -64,6 +67,8 @@ impl Variant {
                         Value::Bool(true)
                     } else if *field.value_type == vcf::ValueType::Integer {
                         if *field.number == vcf::Number::Allele {
+                            // not care about the number of alleles.
+                            // take the first element
                             Value::from(
                                 dat.iter()
                                     .map(|x| {
@@ -138,11 +143,18 @@ impl Variant {
                     }
                 }
                 None => {
-                    if *field.value_type == vcf::ValueType::Flag {
+                    match *field.value_type {
                         // flag type
-                        Value::Bool(false)
-                    } else {
-                        continue;
+                        vcf::ValueType::Flag => Value::Bool(false),
+                        // if csq_header contains the field, parse it as csq
+                        _ if csq_headers.contains_key(field_str) => Value::Array(vec![csq_headers
+                            .get(field_str)
+                            .unwrap()
+                            .iter()
+                            .map(|k| (k.to_string(), Value::Null))
+                            .collect::<Map<String, Value>>()
+                            .into()]),
+                        _ => Value::Null
                     }
                 }
             };
@@ -151,60 +163,32 @@ impl Variant {
         Variant {
             chromosome: str::from_utf8(&vcf_record.chromosome).unwrap().to_string(),
             position: vcf_record.position,
+            // flatten id / filter / alternative
             id: vcf_record
                 .id
                 .iter()
                 .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>().join(";"),
-            reference: str::from_utf8(&vcf_record.reference).unwrap().to_string(),
+                .collect::<Vec<String>>()
+                .join(";"),
             alternative: vcf_record
                 .alternative
                 .iter()
                 .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>().join(","),
-            qual: vcf_record.qual,
+                .collect::<Vec<String>>()
+                .join(","),
             filter: vcf_record
                 .filter
                 .iter()
                 .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>().join(","),
+                .collect::<Vec<String>>()
+                .join(","),
+            reference: str::from_utf8(&vcf_record.reference).unwrap().to_string(),
+            qual: vcf_record.qual,
             info,
-            genotype,
-        }
-    }
-    pub fn get_value(self: &Self, key: &str) -> Value{
-        // Helper function to recursively search for the key
-        fn search<'a>(value: &'a Value, key: &str, results: &mut Vec<&'a Value>) {
-            match value {
-                Value::Object(map) => {
-                    for (k, v) in map {
-                        if k == key {
-                            results.push(v);
-                        } else {
-                            search(v, key, results);
-                        }
-                    }
-                }
-                Value::Array(arr) => {
-                    for v in arr {
-                        search(v, key, results);
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut results = Vec::new();
-        let bind = Value::Object(self.info.clone());
-        search(&bind, key, &mut results);
-        // If only one result, return it directly, otherwise return an array of results
-        if results.len() == 1 {
-            results[0].clone()
-        } else {
-            Value::Array(results.into_iter().cloned().collect())
+            genotype: if genotype.is_empty() { None } else {Some(genotype)},
         }
     }
 }
-
 
 fn try_parse_number(input: &str) -> Value {
     if input.contains('.') || input.contains('e') || input.contains('E') {

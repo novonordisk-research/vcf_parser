@@ -1,0 +1,22 @@
+AND:
+  - AND:
+    - name: info.AF
+      op: le
+      value: 0.01
+    - OR:
+      - name: info.CSQ.IMPACT
+        op: eq
+        value: HIGH
+      - name: info.CSQ.IMPACT
+        op: eq
+        value: MODERATE
+  - OR:
+    - name: info.CADD_PHRED
+      op: ge
+      value: 20
+    - name: info.Pangolin.pangolin_max_score
+      op: ge
+      value: 0.5
+    - name: info.Pangolin.pangolin_max_score
+      op: le
+      value: -0.5
