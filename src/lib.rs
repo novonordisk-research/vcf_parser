@@ -4,16 +4,30 @@ use flate2::read::MultiGzDecoder;
 use clap::Parser;
 use rayon::prelude::*;
 use core::panic;
-use std::collections::HashMap;
-use std::fs::File;
+use std::{fs::File, collections::HashMap, error::Error, str, path::Path};
 use std::io::{self, BufRead, BufReader};
-use std::path::Path;
-use std::str;
 use vcf::{VCFReader, VCFRecord};
 use crate::variant::Variant;
 use serde_json::{Map, Value};
+use serde::Serialize;
 
 mod variant;
+
+#[derive(
+    clap::ValueEnum, Clone, Default, Debug, Serialize,
+)]
+#[derive(PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum OutputFormat {
+    /// tsv
+    #[default]
+    T,
+    /// json
+    J,
+    /// VCF
+    V,
+}
+
 #[derive(Parser)]
 #[command(version = "0.1.1", about = "Read a .vcf[.gz] and produce json objects per line. CSQ-aware, multiallelic-aware", long_about = None)]
 #[command(styles=get_styles())]
@@ -37,7 +51,113 @@ pub struct Args {
     /// nested fields join together on e.g. transcript id, such as Feature
     #[arg(long, value_parser, value_delimiter = ',', default_value = "Feature")]
     fields_join: Vec<String>,
+
+    /// output format.
+    #[arg(long, default_value_t, value_enum)]
+    output_format: OutputFormat,
 }
+
+pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
+    // if args.fields is greater than 1, then its length should be the same with args.fields_join
+    // if args.fields is 1, then args.fields_join
+    if args.fields.len() >1 && args.fields.len() != args.fields_join.len() {
+        return Err("Number of fields should be equal to the number of fields_join".into());
+    }
+    // if thread is not 0, set the number of threads
+    if args.threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(args.threads)
+            .build_global()
+            .unwrap();
+    }
+    // read filter if given
+    let filters: serde_json::Value = if args.filter == "-" {
+        serde_json::Value::Null
+    } else {
+        let filter_file = File::open(args.filter)?;
+        serde_yaml::from_reader(filter_file)?
+    };
+    // read input
+    let reader: Box<dyn BufRead + Send + Sync> = if args.input == "-" {
+        Box::new(BufReader::new(io::stdin()))
+    } else if args.input.ends_with(".vcf.gz") {
+        Box::new(BufReader::new(MultiGzDecoder::new(File::open(args.input)?)))
+    } else {
+        Box::new(BufReader::new(File::open(args.input)?))
+    };
+
+    let reader = VCFReader::new(reader)?;
+    // get info and vep headers
+    let mut info_headers: Vec<&str> = Vec::new();
+    let mut csq_headers: HashMap<String, Vec<String>> = HashMap::new();
+    for info in reader.header().info_list() {
+        let info_str = str::from_utf8(&info)?;
+        info_headers.push(&info_str);
+        // if in the description it has 'Format: Allele|' then presume it is a csq header
+        let desc = str::from_utf8(reader.header().info(info).unwrap().description).unwrap();
+        //if desc.contains(": Allele") {
+        if args.fields.contains(&info_str.to_string()) {
+            csq_headers.insert(info_str.to_string(), parse_csq_header(desc));
+        }
+    }
+    let header = reader.header().clone();
+    
+
+    // info_fields are fields with 'info.' prefix, so CSQ becomes info.CSQ
+    let info_fields = args.fields.iter().map(|x| format!("info.{}", x)).collect::<Vec<String>>();
+    // Feature becomes info.CSQ.Feature
+    let info_fields_join = args.fields_join.iter().enumerate().map(|(ind, x)| format!("{}.{}", info_fields[ind], x)).collect::<Vec<String>>();
+
+    // if tsv, write the header
+    let tsv_header = get_output_header(info_headers, &csq_headers);
+    if args.output_format == OutputFormat::T {
+        
+        print_line_to_stdout(&tsv_header.join("\t"))?;
+    }
+    
+    reader.reader.lines().par_bridge().for_each(|line| {
+        let line = line.unwrap();
+        if line.starts_with("#") {
+            return;
+        }
+        let line = line.as_bytes() as &[u8];
+        let vcf_record = VCFRecord::from_bytes(line, 1, header.clone()).unwrap();
+        let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
+        let explodeds = info_fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
+        let joined = outer_join(explodeds.clone(), &info_fields_join).unwrap();
+        joined.iter().filter(|x| filter_record(x, &filters)).for_each(|x| {
+            match args.output_format {
+                OutputFormat::T => {
+                    let row = get_row(x.clone(), &tsv_header);
+                    print_line_to_stdout(&row.join("\t")).unwrap();
+                },
+                OutputFormat::J => {
+                    let j = serde_json::to_string(&x).unwrap();
+                    print_line_to_stdout(&j).unwrap();
+                },
+                OutputFormat::V => {
+                    unimplemented!();
+                }
+            }
+        });
+        
+        
+    });
+    
+     
+    Ok(())
+}
+
+fn print_line_to_stdout(line: &str) -> Result<(), Box<dyn Error>> {
+    match stdoutln!("{}", line) {
+        Ok(_) => Ok(()),
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::BrokenPipe => std::process::exit(0),
+            _ => Err(Box::new(e)),
+        },
+    }
+}
+
 fn parse_csq_header(header: &str) -> Vec<String> {
     // parse the csq header to produce a list of fields
     header.split(": ").collect::<Vec<&str>>()[1]
@@ -284,84 +404,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
         _ => false
     }
 }
-pub fn run(args:Args) -> Result<(), Box<dyn std::error::Error>> {
-    // if args.fields is greater than 1, then its length should be the same with args.fields_join
-    // if args.fields is 1, then args.fields_join
-    if args.fields.len() >1 && args.fields.len() != args.fields_join.len() {
-        return Err("Number of fields should be equal to the number of fields_join".into());
-    }
-    // if thread is not 0, set the number of threads
-    if args.threads > 0 {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(args.threads)
-            .build_global()
-            .unwrap();
-    }
-    // read filter if given
-    let filters: serde_json::Value = if args.filter == "-" {
-        serde_json::Value::Null
-    } else {
-        let filter_file = File::open(args.filter)?;
-        serde_yaml::from_reader(filter_file)?
-    };
-    // read input
-    let reader: Box<dyn BufRead + Send + Sync> = if args.input == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else if args.input.ends_with(".vcf.gz") {
-        Box::new(BufReader::new(MultiGzDecoder::new(File::open(args.input)?)))
-    } else {
-        Box::new(BufReader::new(File::open(args.input)?))
-    };
 
-    let reader = VCFReader::new(reader)?;
-    // get info and vep headers
-    let mut info_headers: Vec<&str> = Vec::new();
-    let mut csq_headers: HashMap<String, Vec<String>> = HashMap::new();
-    for info in reader.header().info_list() {
-        let info_str = str::from_utf8(&info)?;
-        info_headers.push(&info_str);
-        // if in the description it has 'Format: Allele|' then presume it is a csq header
-        let desc = str::from_utf8(reader.header().info(info).unwrap().description).unwrap();
-        //if desc.contains(": Allele") {
-        if args.fields.contains(&info_str.to_string()) {
-            csq_headers.insert(info_str.to_string(), parse_csq_header(desc));
-        }
-    }
-    let header = reader.header().clone();
-    //let csv_header = 
-
-    // info_fields are fields with 'info.' prefix, so CSQ becomes info.CSQ
-    let info_fields = args.fields.iter().map(|x| format!("info.{}", x)).collect::<Vec<String>>();
-    // Feature becomes info.CSQ.Feature
-    let info_fields_join = args.fields_join.iter().enumerate().map(|(ind, x)| format!("{}.{}", info_fields[ind], x)).collect::<Vec<String>>();
-    
-    reader.reader.lines().par_bridge().for_each(|line| {
-        let line = line.unwrap();
-        if line.starts_with("#") {
-            return;
-        }
-        let line = line.as_bytes() as &[u8];
-        let vcf_record = VCFRecord::from_bytes(line, 1, header.clone()).unwrap();
-        let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
-        let explodeds = info_fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-        let joined = outer_join(explodeds.clone(), &info_fields_join).unwrap();
-        joined.iter().filter(|x| filter_record(x, &filters)).for_each(|x| {
-            let j = serde_json::to_string(&x).unwrap();
-            match stdoutln!("{}", j) {
-                Ok(_) => Ok(()),
-                Err(e) => match e.kind() {
-                    std::io::ErrorKind::BrokenPipe => std::process::exit(0),
-                    _ => Err(e),
-                },
-            }
-            .unwrap();
-        });
-        
-        
-    });
-     
-    Ok(())
-}
 
 fn vcf_extension_validator(fname: &str) -> Result<String, String> {
     if fname == "-" {
@@ -426,7 +469,7 @@ fn get_styles() -> clap::builder::Styles {
 
 
 
-pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) -> Result<Vec<Map<String, Value>>, Box<dyn std::error::Error>> {
+pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) -> Result<Vec<Map<String, Value>>, Box<dyn Error>> {
     if tables.len() == 0 {
         return Ok(vec![]);
     }
@@ -520,13 +563,45 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
     result
 }
 
+pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
+    // given a data and a header, return a row
+    // for csv output
+    header.iter().map(|x| {
+        match data.get(x).unwrap_or(&Value::Null) {
+            Value::Null => "".to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.as_str().to_string(),
+            x => x.to_string(),
+        }
+    }).collect::<Vec<String>>()
+}
 
+pub fn get_output_header<'a>(info_header: Vec<&str>, csq_header: &HashMap<String, Vec<String>>) -> Vec<String> {
+    // get the header for csv output
+    // essential columns are in the front. All info columns are in the back, sorted alphabetically.
+    let mut header: Vec<String> = Vec::new();
+    //let  header= vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "ref".to_string(), "alt".to_string(), "qual".to_string(), "filter".to_string(), ];
+    for h in info_header {
+        if csq_header.contains_key(h) {
+            for csq in csq_header.get(h).unwrap() {
+                header.push(format!("info.{}.{}", h, csq));
+            }
+        } else {
+            header.push(format!("info.{}", h));
+        }
+    }
+    // sort header
+    header.sort();
+    // add chromosome, position, id, ref, alt, qual, filter
+    let header = vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "reference".to_string(), "alternative".to_string(), "qual".to_string(), "filter".to_string(), ].iter().chain(header.iter()).map(|x| x.to_string()).collect::<Vec<String>>();
 
+    header
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    pub fn prepare_test(fields:&Vec<String>)-> Result<(VCFReader<Box<dyn BufRead + Send + Sync>>, HashMap<String, Vec<String>>, Value), Box<dyn std::error::Error>> {
+    pub fn prepare_test(fields:&Vec<String>)-> Result<(VCFReader<Box<dyn BufRead + Send + Sync>>, HashMap<String, Vec<String>>, Value), Box<dyn Error>> {
         let filter_file = File::open("test/filter.yml")?;
         let filter = serde_yaml::from_reader(filter_file)?;
         let reader: Box<dyn BufRead + Send + Sync> = 
@@ -558,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn test_variants() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_variants() -> Result<(), Box<dyn Error>> {
         let (mut reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut vcf_record = reader.empty_record();
         let mut variants:Vec<Variant> = Vec::new();
@@ -572,7 +647,20 @@ mod tests {
     }
 
     #[test]
-    fn test_explode_data() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_get_output_header() -> Result<(), Box<dyn Error>> {
+        let (reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
+        let mut info_headers: Vec<&str> = Vec::new();
+        for info in reader.header().info_list() {
+            let info_str = str::from_utf8(&info)?;
+            info_headers.push(&info_str);
+        }
+        let header = get_output_header(info_headers, &csq_headers);
+        let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who"];
+        assert_eq!(header, expected);
+        Ok(())
+    }
+    #[test]
+    fn test_explode_data() -> Result<(), Box<dyn Error>> {
         let data = serde_json::from_str(r#"{"a":1, "b":2, "c":[{"foo":"A","bar":"B"},{"foo":"a", "bar":"b"}]}"#)?;
         let exploded = explode_data(data, "c", &vec!["b".to_string(),"c".to_string()]);
         let expected: Vec<Map<String, Value>> = vec![
@@ -584,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_test() -> Result<(), Box<dyn Error>> {
         let (mut reader, csq_headers, filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut vcf_record = reader.empty_record();
         let fields = vec!["info.CSQ".to_string(), "info.Pangolin".to_string()];
@@ -603,8 +691,9 @@ mod tests {
         //println!("{:?}", serde_json::to_string(&variants)?);
         Ok(())
     }
+
     #[test]
-    fn test_outer_join1() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_outer_join1() -> Result<(), Box<dyn Error>> {
         let table1: Vec<Map<String, Value>> = vec![
             serde_json::from_str(r#"{"key1": "value1", "key2": "value2"}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value3", "key2": "value4"}"#).unwrap(),
@@ -623,7 +712,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_outer_join2() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_outer_join2() -> Result<(), Box<dyn Error>> {
         let table1: Vec<Map<String, Value>> = vec![
             serde_json::from_str(r#"{"key1": "value1", "key2": "value2"}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value3", "key2": "value4"}"#).unwrap(),
@@ -642,7 +731,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_outer_join3() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_outer_join3() -> Result<(), Box<dyn Error>> {
         let table1: Vec<Map<String, Value>> = vec![
             serde_json::from_str(r#"{"key1": "value1", "key2": null}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value3", "key2": "value4"}"#).unwrap(),
