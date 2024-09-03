@@ -3,15 +3,14 @@ A VCF Parser written in Rust
 It reads a VCF file (plain or gzipped) and parse the output to a JSON/TSV format.
 The input VCF needs to be normalised so that there is no more than one alt per line. By default it uses all cores available to process the input.
 
-Change log:
+Features
 ------------
-### 0.2.0
-* Breaking change: Flatten the output json, so there is no longer nested structure in the output.
-* Breaking change: Transcript aware filtering. If you want canonical trancripts, you only get canonical transcripts.
-* Provide TSV as an option (also set as default).
-* Join different CSQ-like fields with keys. For instance if you have two CSQ-like fields, they can be joined by transcript id. vcf_parser ignores the version number when it joins records.
-
-
+* Unnest INFO field
+* Explode CSQ-like fields
+* Join exploded fields by transcript_id
+* Accept arbitrarily sophisticated filters defined in a yaml file.
+* Multithreaded
+* Output in JSON or TSV format
 
 Installation
 ------------
