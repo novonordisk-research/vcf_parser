@@ -70,6 +70,13 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
             .build_global()
             .unwrap();
     }
+    // if thread is not 0, set the number of threads
+    if args.threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(args.threads)
+            .build_global()
+            .unwrap();
+    }
     // read filter if given
     let filters: serde_json::Value = if args.filter == "-" {
         serde_json::Value::Null
