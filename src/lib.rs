@@ -131,7 +131,7 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         let vcf_record = VCFRecord::from_bytes(line, 1, header.clone()).unwrap();
         let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
         let explodeds = info_fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-        let joined = outer_join(explodeds.clone(), &info_fields_join).unwrap();
+        let joined = outer_join(explodeds, &info_fields_join).unwrap();
         joined.iter().filter(|x| filter_record(x, &filters)).for_each(|x| {
             match args.output_format {
                 OutputFormat::T => {
@@ -685,7 +685,7 @@ mod tests {
         let fields = vec!["info.CSQ".to_string(), "info.Pangolin".to_string()];
         let fields_join = vec!["info.CSQ.Feature".to_string(), "info.Pangolin.pangolin_transcript".to_string()];
         while reader.next_record(&mut vcf_record).unwrap() {
-            let variant = Variant::new(&vcf_record, reader.header().clone().samples(), &csq_headers);
+            let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             //let val = serde_json::to_value(&variant)?;
             //println!("{:?}", serde_json::to_string(&variant)?);
             let explodeds = fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
