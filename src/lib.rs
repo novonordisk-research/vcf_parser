@@ -513,24 +513,24 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
                 for (k, v) in left_entry {
                     // skip if the key is already in the entry, and it is not Null
                     if right_entry.get(&k).unwrap_or(&Value::Null) == &Value::Null {
-                        right_entry.insert(k.clone(), v.clone());
+                        right_entry.insert(k.to_string(), v);
                     }
                 }
             } else {
                 // fill in null to all the keys in the left table that are not in the right table
                 for k in left_keys.clone() {
                     if right_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
-                        right_entry.insert(k.clone(), Value::Null);
+                        right_entry.insert(k.to_string(), Value::Null);
                     }
                 }
             }
         });
         // add the left table (whatever left) to the right table. fill missing right keys with null
         for left_entry in left_table {
-            let mut new_entry = left_entry.clone();
+            let mut new_entry = left_entry;
             for k in right_keys.clone() {
                 if new_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
-                    new_entry.insert(k.clone(), Value::Null);
+                    new_entry.insert(k.to_string(), Value::Null);
                 }
             }
             right_table.push(new_entry);
@@ -555,7 +555,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
                             let k = format!("{}.{}", key, k);
                             new_record.insert(k, v.clone());
                         }
-                        result.push(new_record.clone());
+                        result.push(new_record);
                     },
                     _ => panic!("Array should contain objects"),
                 }
@@ -689,7 +689,7 @@ mod tests {
             //let val = serde_json::to_value(&variant)?;
             //println!("{:?}", serde_json::to_string(&variant)?);
             let explodeds = fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-            let joined = outer_join(explodeds.clone(), &fields_join)?;
+            let joined = outer_join(explodeds, &fields_join)?;
             println!("====================");
             //println!("{}", serde_json::to_string_pretty(&joined)?);
             let filtered_record = joined.iter().filter(|x| filter_record(x, &filter)).collect::<Vec<&Map<String, Value>>>();
