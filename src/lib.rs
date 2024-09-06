@@ -645,7 +645,7 @@ mod tests {
         let mut vcf_record = reader.empty_record();
         let mut variants:Vec<Variant> = Vec::new();
         while reader.next_record(&mut vcf_record).unwrap() {
-            let variant = Variant::new(&vcf_record, reader.header().clone().samples(), &csq_headers);
+            let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             variants.push(variant);
             
         }
