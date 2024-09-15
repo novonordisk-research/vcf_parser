@@ -70,6 +70,13 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
             .build_global()
             .unwrap();
     }
+    // if thread is not 0, set the number of threads
+    if args.threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(args.threads)
+            .build_global()
+            .unwrap();
+    }
     // read filter if given
     let filters: serde_json::Value = if args.filter == "-" {
         serde_json::Value::Null
@@ -124,7 +131,7 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         let vcf_record = VCFRecord::from_bytes(line, 1, header.clone()).unwrap();
         let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
         let explodeds = info_fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-        let joined = outer_join(explodeds.clone(), &info_fields_join).unwrap();
+        let joined = outer_join(explodeds, &info_fields_join).unwrap();
         joined.iter().filter(|x| filter_record(x, &filters)).for_each(|x| {
             match args.output_format {
                 OutputFormat::T => {
@@ -275,11 +282,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. > value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() > value.as_f64().unwrap() {
                                         return true;
@@ -310,11 +313,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. >= value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() >= value.as_f64().unwrap() {
                                         return true;
@@ -345,11 +344,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. < value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() < value.as_f64().unwrap() {
                                         return true;
@@ -380,11 +375,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. <= value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() <= value.as_f64().unwrap() {
                                         return true;
@@ -506,24 +497,24 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
                 for (k, v) in left_entry {
                     // skip if the key is already in the entry, and it is not Null
                     if right_entry.get(&k).unwrap_or(&Value::Null) == &Value::Null {
-                        right_entry.insert(k.clone(), v.clone());
+                        right_entry.insert(k.to_string(), v);
                     }
                 }
             } else {
                 // fill in null to all the keys in the left table that are not in the right table
                 for k in left_keys.clone() {
                     if right_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
-                        right_entry.insert(k.clone(), Value::Null);
+                        right_entry.insert(k.to_string(), Value::Null);
                     }
                 }
             }
         });
         // add the left table (whatever left) to the right table. fill missing right keys with null
         for left_entry in left_table {
-            let mut new_entry = left_entry.clone();
+            let mut new_entry = left_entry;
             for k in right_keys.clone() {
                 if new_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
-                    new_entry.insert(k.clone(), Value::Null);
+                    new_entry.insert(k.to_string(), Value::Null);
                 }
             }
             right_table.push(new_entry);
@@ -548,7 +539,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
                             let k = format!("{}.{}", key, k);
                             new_record.insert(k, v.clone());
                         }
-                        result.push(new_record.clone());
+                        result.push(new_record);
                     },
                     _ => panic!("Array should contain objects"),
                 }
@@ -638,7 +629,7 @@ mod tests {
         let mut vcf_record = reader.empty_record();
         let mut variants:Vec<Variant> = Vec::new();
         while reader.next_record(&mut vcf_record).unwrap() {
-            let variant = Variant::new(&vcf_record, reader.header().clone().samples(), &csq_headers);
+            let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             variants.push(variant);
             
         }
@@ -678,11 +669,11 @@ mod tests {
         let fields = vec!["info.CSQ".to_string(), "info.Pangolin".to_string()];
         let fields_join = vec!["info.CSQ.Feature".to_string(), "info.Pangolin.pangolin_transcript".to_string()];
         while reader.next_record(&mut vcf_record).unwrap() {
-            let variant = Variant::new(&vcf_record, reader.header().clone().samples(), &csq_headers);
+            let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             //let val = serde_json::to_value(&variant)?;
             //println!("{:?}", serde_json::to_string(&variant)?);
             let explodeds = fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-            let joined = outer_join(explodeds.clone(), &fields_join)?;
+            let joined = outer_join(explodeds, &fields_join)?;
             println!("====================");
             //println!("{}", serde_json::to_string_pretty(&joined)?);
             let filtered_record = joined.iter().filter(|x| filter_record(x, &filter)).collect::<Vec<&Map<String, Value>>>();
