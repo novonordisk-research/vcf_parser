@@ -282,11 +282,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. > value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() > value.as_f64().unwrap() {
                                         return true;
@@ -317,11 +313,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. >= value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() >= value.as_f64().unwrap() {
                                         return true;
@@ -352,11 +344,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. < value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() < value.as_f64().unwrap() {
                                         return true;
@@ -387,11 +375,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                                 _ => {
                                     if val.is_null() {
-                                        if 0. <= value.as_f64().unwrap() {
-                                            return true;
-                                        } else {
-                                            return false;
-                                        }
+                                        return false;
                                     }
                                     if val.as_f64().unwrap() <= value.as_f64().unwrap() {
                                         return true;
