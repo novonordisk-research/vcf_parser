@@ -385,6 +385,20 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                                 }
                             }
                         }
+                        "in" => {
+                            match value {
+                                serde_json::Value::Array(arr) => {
+                                    return arr.contains(val)
+                                }
+                                _ => {
+                                    if val == value {
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
                         _ => panic!("Unknown operator"),
                     }
                 }
@@ -668,18 +682,20 @@ mod tests {
         let mut vcf_record = reader.empty_record();
         let fields = vec!["info.CSQ".to_string(), "info.Pangolin".to_string()];
         let fields_join = vec!["info.CSQ.Feature".to_string(), "info.Pangolin.pangolin_transcript".to_string()];
+        let mut results: Vec<Map<String,Value>> = Vec::new();
+        println!("{:?}", filter);
         while reader.next_record(&mut vcf_record).unwrap() {
             let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             //let val = serde_json::to_value(&variant)?;
             //println!("{:?}", serde_json::to_string(&variant)?);
             let explodeds = fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
             let joined = outer_join(explodeds, &fields_join)?;
-            println!("====================");
+            //println!("====================");
             //println!("{}", serde_json::to_string_pretty(&joined)?);
-            let filtered_record = joined.iter().filter(|x| filter_record(x, &filter)).collect::<Vec<&Map<String, Value>>>();
-            println!("{}", serde_json::to_string_pretty(&filtered_record)?);
+            let filtered_record: Vec<Map<String, Value>> = joined.into_iter().filter(|x| filter_record(x, &filter)).collect();
+            results.extend(filtered_record.into_iter());
         }
-        //println!("{:?}", serde_json::to_string(&variants)?);
+        assert_eq!(results.len(), 6);
         Ok(())
     }
 
