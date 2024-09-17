@@ -3,13 +3,9 @@ AND:
     - name: info.AF
       op: le
       value: 0.01
-    - OR:
-      - name: info.CSQ.IMPACT
-        op: eq
-        value: HIGH
-      - name: info.CSQ.IMPACT
-        op: eq
-        value: MODERATE
+    - name: info.CSQ.IMPACT
+      op: in
+      value: [HIGH, MODERATE]
   - OR:
     - name: info.CADD_PHRED
       op: ge
