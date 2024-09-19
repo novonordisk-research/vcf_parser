@@ -40,6 +40,7 @@ vcf_parser -i test/test.vcf --fields CSQ,Pangolin --fields-join Feature,pangolin
 -h #help 
 -i <input.vcf[.gz]>  
 -f <filter.yaml>
+-t <thread number>
 --output-format <j|t> #j for json, t for tsv
 --fields #fields to explode. default to CSQ
 --fields-join #keys to join fields, in the same order
