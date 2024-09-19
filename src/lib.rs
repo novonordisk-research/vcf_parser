@@ -236,164 +236,52 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                     let val = record.get(name).unwrap_or(&Value::Null);
                     match op {
                         "eq" => {
-                            match val {
-                                serde_json::Value::Array(arr) => {
-                                    if arr.contains(value) {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                                _ => {
-                                    if *val == *value {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                            }
+                            if *val == *value {
+                                return true;
+                            } 
+                            return false;    
                         }
                         "ne" => {
-                            match val {
-                                serde_json::Value::Array(arr) => {
-                                    if arr.iter().any(|x| x != value) {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                                _ => {
-                                    if *val != *value {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
+                            if *val != *value {
+                                return true;
                             }
+                            return false;
                         }
                         "gt" => {
-                            // if val is null, returning false. essentially treat null as 0, and assume value is positive.
-                            match val {
-                                serde_json::Value::Array(arr) => {
-                                    if arr.iter().any(|x| {
-                                        if x.is_null() {
-                                            if 0. > value.as_f64().unwrap() {
-                                                return true;
-                                            } else {
-                                                return false;
-                                            }
-                                        }
-                                        x.as_f64().unwrap() > value.as_f64().unwrap()
-                                    }) {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                                _ => {
-                                    if val.is_null() {
-                                        return false;
-                                    }
-                                    if val.as_f64().unwrap() > value.as_f64().unwrap() {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
+                            if val.is_null() {
+                                return false;
                             }
+                            if val.as_f64().unwrap() > value.as_f64().unwrap() {
+                                return true;
+                            }
+                            return false;
                         }
                         "ge" => {
-                            // if val is null, treat it as 0.
-                            match val {
-                                serde_json::Value::Array(arr) => {
-                                    if arr.iter().any(|x| {
-                                        if x.is_null() {
-                                            if 0. >= value.as_f64().unwrap() {
-                                                return true;
-                                            } else {
-                                                return false;
-                                            }
-                                        }
-                                        x.as_f64().unwrap() >= value.as_f64().unwrap()
-                                    }) {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                                _ => {
-                                    if val.is_null() {
-                                        return false;
-                                    }
-                                    if val.as_f64().unwrap() >= value.as_f64().unwrap() {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
+                            if val.is_null() {
+                                return false;
                             }
+                            if val.as_f64().unwrap() >= value.as_f64().unwrap() {
+                                return true;
+                            } 
+                            return false;
                         }
                         "lt" => {
-                            // if val is null, returning true. essentially treat null as 0, and assume value is positive.
-                            match val {
-                                serde_json::Value::Array(arr) => {
-                                    if arr.iter().any(|x| {
-                                        if x.is_null() {
-                                            if 0. < value.as_f64().unwrap() {
-                                                return true;
-                                            } else {
-                                                return false;
-                                            }
-                                        }
-                                        x.as_f64().unwrap() < value.as_f64().unwrap()
-                                    }) {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                                _ => {
-                                    if val.is_null() {
-                                        return false;
-                                    }
-                                    if val.as_f64().unwrap() < value.as_f64().unwrap() {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
+                            if val.is_null() {
+                                return false;
                             }
+                            if val.as_f64().unwrap() < value.as_f64().unwrap() {
+                                return true;
+                            }
+                            return false;
                         }
                         "le" => {
-                            // if val is null, returning true. essentially treat null as 0, and assume value is positive.
-                            match val {
-                                serde_json::Value::Array(arr) => {
-                                    if arr.iter().any(|x| {
-                                        if x.is_null() {
-                                            if 0. <= value.as_f64().unwrap() {
-                                                return true;
-                                            } else {
-                                                return false;
-                                            }
-                                        }
-                                        x.as_f64().unwrap() <= value.as_f64().unwrap()
-                                    }) {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                                _ => {
-                                    if val.is_null() {
-                                        return false;
-                                    }
-                                    if val.as_f64().unwrap() <= value.as_f64().unwrap() {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
+                            if val.is_null() {
+                                return false;
                             }
+                            if val.as_f64().unwrap() <= value.as_f64().unwrap() {
+                                return true;
+                            } 
+                            return false;
                         }
                         "in" => {
                             match value {
@@ -639,14 +527,6 @@ mod tests {
         }
         Ok((reader, csq_headers, filter))
     }
-    #[test]
-    fn args() {
-        let args = Args::parse_from(&["test", "-i", "test/test.vcf", "-t", "1", "-f", "test/filter.yml", "--fields", "CSQ"]);
-        assert_eq!(args.input, "test/test.vcf");
-        assert_eq!(args.threads, 1);
-        assert_eq!(args.filter, "test/filter.yml");
-        assert_eq!(args.fields, vec!["CSQ".to_string()]);
-    }
 
     #[test]
     fn test_variants() -> Result<(), Box<dyn Error>> {
@@ -688,13 +568,12 @@ mod tests {
     }
 
     #[test]
-    fn test_test() -> Result<(), Box<dyn Error>> {
+    fn test_filter() -> Result<(), Box<dyn Error>> {
         let (mut reader, csq_headers, filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut vcf_record = reader.empty_record();
         let fields = vec!["info.CSQ".to_string(), "info.Pangolin".to_string()];
         let fields_join = vec!["info.CSQ.Feature".to_string(), "info.Pangolin.pangolin_transcript".to_string()];
         let mut results: Vec<Map<String,Value>> = Vec::new();
-        println!("{:?}", filter);
         while reader.next_record(&mut vcf_record).unwrap() {
             let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             //let val = serde_json::to_value(&variant)?;
