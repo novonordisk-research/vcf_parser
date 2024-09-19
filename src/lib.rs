@@ -207,7 +207,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
     match filters {
         Value::Object(map) => {
             for (k, v) in map {
-                if k == "AND" {
+                if k.eq_ignore_ascii_case("AND") {
                     match v {
                         Value::Array(vv) => {
                             if vv.into_iter().all(|x| filter_record(record, x)) {
@@ -218,7 +218,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                         }
                         _ => panic!("AND should be a list of filters"),
                     }
-                } else if k == "OR" {
+                } else if k.eq_ignore_ascii_case("OR") {
                     match v {
                         Value::Array(vv) => {
                             if vv.into_iter().any(|x| filter_record(record, x)) {
