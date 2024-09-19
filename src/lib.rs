@@ -235,19 +235,19 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                     let value = &map["value"];
                     let val = record.get(name).unwrap_or(&Value::Null);
                     match op {
-                        "eq" => {
+                        "eq" | "=" | "==" => {
                             if *val == *value {
                                 return true;
                             } 
                             return false;    
                         }
-                        "ne" => {
+                        "ne" | "!=" | "≠" => {
                             if *val != *value {
                                 return true;
                             }
                             return false;
                         }
-                        "gt" => {
+                        "gt" | ">" => {
                             if val.is_null() {
                                 return false;
                             }
@@ -256,7 +256,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                             }
                             return false;
                         }
-                        "ge" => {
+                        "ge" | ">=" | "≥" => {
                             if val.is_null() {
                                 return false;
                             }
@@ -265,7 +265,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                             } 
                             return false;
                         }
-                        "lt" => {
+                        "lt" | "<" => {
                             if val.is_null() {
                                 return false;
                             }
@@ -274,7 +274,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                             }
                             return false;
                         }
-                        "le" => {
+                        "le" | "<=" | "≤" => {
                             if val.is_null() {
                                 return false;
                             }
@@ -283,7 +283,7 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
                             } 
                             return false;
                         }
-                        "in" => {
+                        "in" | "∈" => {
                             match value {
                                 serde_json::Value::Array(arr) => {
                                     return arr.contains(val)
