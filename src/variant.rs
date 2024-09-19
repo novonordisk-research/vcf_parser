@@ -67,8 +67,8 @@ impl Variant {
                         Value::Bool(true)
                     } else if *field.value_type == vcf::ValueType::Integer {
                         if *field.number == vcf::Number::Allele {
-                            // not care about the number of alleles.
-                            // take the first element
+                            // assume input is normalised vcf. not care about the number of alleles.
+                            // just take the first element.
                             Value::from(
                                 dat.iter()
                                     .map(|x| {
@@ -146,7 +146,7 @@ impl Variant {
                     match *field.value_type {
                         // flag type
                         vcf::ValueType::Flag => Value::Bool(false),
-                        // if csq_header contains the field, parse it as csq
+                        // if csq_header contains the field, parse it as csq. Values are all null.
                         _ if csq_headers.contains_key(field_str) => Value::Array(vec![csq_headers
                             .get(field_str)
                             .unwrap()
@@ -191,17 +191,18 @@ impl Variant {
 }
 
 fn try_parse_number(input: &str) -> Value {
-    if input.contains('.') || input.contains('e') || input.contains('E') {
-        // Try to parse as f64
-        match input.parse::<f64>() {
-            Ok(num) => Value::Number(Number::from_f64(num).unwrap()),
-            Err(_) => Value::String(input.to_string()),
-        }
-    } else if input == "" {
-        Value::Null
-    } else {
-        // Try to parse as i64
-        match input.parse::<i64>() {
+    // Can't just rely on VCF header to parse info fields if there are nested ones like CSQ-like fields, 
+    // as their data types are not necessarily exposed in the VCF header.
+    match input {
+        inp if inp.contains('.') || input.contains('e') || input.contains('E') => {
+            // Try to parse as f64
+            match input.parse::<f64>() {
+                Ok(num) => Value::Number(Number::from_f64(num).unwrap()),
+                Err(_) => Value::String(input.to_string()),
+            }
+        },
+        "" => Value::Null,
+        _ =>  match input.parse::<i64>() {
             Ok(num) => Value::Number(Number::from(num)),
             Err(_) => Value::String(input.to_string()),
         }

@@ -84,25 +84,31 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         let filter_file = File::open(args.filter)?;
         serde_yaml::from_reader(filter_file)?
     };
-    // read input
-    let reader: Box<dyn BufRead + Send + Sync> = if args.input == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else if args.input.ends_with(".vcf.gz") {
-        Box::new(BufReader::new(MultiGzDecoder::new(File::open(args.input)?)))
-    } else {
-        Box::new(BufReader::new(File::open(args.input)?))
+
+    // read input.
+    // if "-", read from stdin.
+    // if *.vcf.gz, use gzdecoder
+    // otherwise just plain text read
+    let reader: Box<dyn BufRead + Send + Sync> = match args.input.as_str() {
+        "-" => Box::new(BufReader::new(io::stdin())),
+        inp if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(args.input)?))),
+        _ => Box::new(BufReader::new(File::open(args.input)?))
     };
 
+    /* 
+    vcfrs reads the vcf header from the stream, then reads a variant/site at a time to couple with the header to make a VCFRecord.
+    To enable multithread, I would need to make a VCFRecord in each thread when it reads a line, and couple it with the header.
+    This would require the access of a private method (VCFRecord::reader) in the vcfrs repo, which isn't possible. Therefore I forked that repo and exposed the field..
+    */
+
     let reader = VCFReader::new(reader)?;
-    // get info and vep headers
+    // get info and csq-like headers
     let mut info_headers: Vec<&str> = Vec::new();
     let mut csq_headers: HashMap<String, Vec<String>> = HashMap::new();
     for info in reader.header().info_list() {
         let info_str = str::from_utf8(&info)?;
         info_headers.push(&info_str);
-        // if in the description it has 'Format: Allele|' then presume it is a csq header
         let desc = str::from_utf8(reader.header().info(info).unwrap().description).unwrap();
-        //if desc.contains(": Allele") {
         if args.fields.contains(&info_str.to_string()) {
             csq_headers.insert(info_str.to_string(), parse_csq_header(desc));
         }
@@ -122,6 +128,7 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         print_line_to_stdout(&tsv_header.join("\t"))?;
     }
     
+    // parallel processing each variant/site
     reader.reader.lines().par_bridge().for_each(|line| {
         let line = line.unwrap();
         if line.starts_with("#") {
@@ -151,11 +158,12 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         
     });
     
-     
     Ok(())
 }
 
 fn print_line_to_stdout(line: &str) -> Result<(), Box<dyn Error>> {
+    // output line to stdout.
+    // also captures broken pipe that might be caused by | head, for example.
     match stdoutln!("{}", line) {
         Ok(_) => Ok(()),
         Err(e) => match e.kind() {
@@ -193,6 +201,8 @@ fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
         ]
     }
     This function is recursive, so it can handle nested AND/OR
+
+    One can potentially convert this into logic expression and parse through coolrule, but it would be many times slower!
     */
     match filters {
         Value::Object(map) => {
@@ -538,7 +548,8 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
 }
 
 pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<String, Value>> {
-    // explode on key, but drop the keys in drops
+    // explode on key, but drop the columns in `drops`.
+    // dropping columns is desirable if one row is going to be exploded on multiple keys, and it will result in duplicated columns
     let mut result: Vec<Map<String, Value>> = vec![];
     match data.get(key).unwrap_or(&Value::Null) {
         Value::Array(arr) => {
@@ -570,7 +581,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
 
 pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
     // given a data and a header, return a row
-    // for csv output
+    // for tsv output
     header.iter().map(|x| {
         match data.get(x).unwrap_or(&Value::Null) {
             Value::Null => "".to_string(),
