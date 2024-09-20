@@ -1,5 +1,5 @@
 // Read from stdin or a .vcf[.gz] file
-use calm_io::stdoutln;
+
 use flate2::read::MultiGzDecoder;
 use clap::Parser;
 use rayon::prelude::*;
@@ -12,21 +12,7 @@ use serde_json::{Map, Value};
 use serde::Serialize;
 
 mod variant;
-
-#[derive(
-    clap::ValueEnum, Clone, Default, Debug, Serialize,
-)]
-#[derive(PartialEq)]
-#[serde(rename_all = "kebab-case")]
-enum OutputFormat {
-    /// tsv
-    #[default]
-    T,
-    /// json
-    J,
-    /// VCF
-    V,
-}
+mod utils;
 
 #[derive(Parser)]
 #[command(version = "0.2.1", about = "Read a (normalised) .vcf[.gz] and output tsv/json. CSQ-aware.", long_about = None)]
@@ -114,7 +100,7 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         info_headers.push(&info_str);
         let desc = str::from_utf8(reader.header().info(info).unwrap().description).unwrap();
         if args.fields.contains(&info_str.to_string()) {
-            csq_headers.insert(info_str.to_string(), parse_csq_header(desc));
+            csq_headers.insert(info_str.to_string(), utils::parse_csq_header(desc));
         }
     }
     let header = reader.header().clone();
@@ -130,12 +116,12 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
 
     // flush header and quit if --l
     if args.list {
-        print_line_to_stdout(&tsv_header.join("\n"))?;
+        utils::print_line_to_stdout(&tsv_header.join("\n"))?;
         return Ok(());
     }
     if args.output_format == OutputFormat::T {
         
-        print_line_to_stdout(&tsv_header.join("\t"))?;
+        utils::print_line_to_stdout(&tsv_header.join("\t"))?;
     }
     
     // parallel processing each variant/site
@@ -149,15 +135,15 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
         let explodeds = info_fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
         let joined = outer_join(explodeds, &info_fields_join).unwrap();
-        joined.iter().filter(|x| filter_record(x, &filters)).for_each(|x| {
+        joined.iter().filter(|x| utils::filter_record(x, &filters)).for_each(|x| {
             match args.output_format {
                 OutputFormat::T => {
                     let row = get_row(x.clone(), &tsv_header);
-                    print_line_to_stdout(&row.join("\t")).unwrap();
+                    utils::print_line_to_stdout(&row.join("\t")).unwrap();
                 },
                 OutputFormat::J => {
                     let j = serde_json::to_string(&x).unwrap();
-                    print_line_to_stdout(&j).unwrap();
+                    utils::print_line_to_stdout(&j).unwrap();
                 },
                 OutputFormat::V => {
                     unimplemented!();
@@ -171,153 +157,22 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn print_line_to_stdout(line: &str) -> Result<(), Box<dyn Error>> {
-    // output line to stdout.
-    // also captures broken pipe that might be caused by | head, for example.
-    match stdoutln!("{}", line) {
-        Ok(_) => Ok(()),
-        Err(e) => match e.kind() {
-            std::io::ErrorKind::BrokenPipe => std::process::exit(0),
-            _ => Err(Box::new(e)),
-        },
-    }
+
+
+#[derive(
+    clap::ValueEnum, Clone, Default, Debug, Serialize,
+)]
+#[derive(PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum OutputFormat {
+    /// tsv
+    #[default]
+    T,
+    /// json
+    J,
+    /// VCF
+    V,
 }
-
-fn parse_csq_header(header: &str) -> Vec<String> {
-    // parse the csq header to produce a list of fields
-    header.split(": ").collect::<Vec<&str>>()[1]
-        .split("|")
-        .map(|x| x.trim().to_string())
-        .collect::<Vec<String>>()
-}
-
-fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
-    // filter the variant based on the filters. Filter is like:
-    /*
-    {  
-        "AND":[
-            {
-                "AND":[
-                    {"name":"gnomAD_exome_V4.0_AF","op":"le","value":0.05},
-                    {"name":"gnomAD_genome_V4.0_AF","op":"le","value":0.05}
-                ]
-            },
-            {
-                "OR":[
-                    {"name":"CADD_PHRED","op":"ge","value":20},
-                    {"name":"Lof","op":"ne","value":null}
-                ]
-            }
-        ]
-    }
-    This function is recursive, so it can handle nested AND/OR
-
-    One can potentially convert this into logic expression and parse through coolrule, but it would be many times slower!
-    */
-    match filters {
-        Value::Object(map) => {
-            for (k, v) in map {
-                if k.eq_ignore_ascii_case("AND") {
-                    match v {
-                        Value::Array(vv) => {
-                            if vv.into_iter().all(|x| filter_record(record, x)) {
-                                return true;
-                            } else {
-                                return false;
-                            }
-                        }
-                        _ => panic!("AND should be a list of filters"),
-                    }
-                } else if k.eq_ignore_ascii_case("OR") {
-                    match v {
-                        Value::Array(vv) => {
-                            if vv.into_iter().any(|x| filter_record(record, x)) {
-                                return true;
-                            } else {
-                                return false;
-                            }
-                        }
-                        _ => panic!("OR should be a list of filters"),
-                    }
-                } else {
-                    let name = map["name"].as_str().unwrap();
-                    let op = map["op"].as_str().unwrap();
-                    let value = &map["value"];
-                    let val = record.get(name).unwrap_or(&Value::Null);
-                    match op {
-                        "eq" | "=" | "==" => {
-                            if *val == *value {
-                                return true;
-                            } 
-                            return false;    
-                        }
-                        "ne" | "!=" | "≠" => {
-                            if *val != *value {
-                                return true;
-                            }
-                            return false;
-                        }
-                        "gt" | ">" => {
-                            if val.is_null() {
-                                return false;
-                            }
-                            if val.as_f64().unwrap() > value.as_f64().unwrap() {
-                                return true;
-                            }
-                            return false;
-                        }
-                        "ge" | ">=" | "≥" => {
-                            if val.is_null() {
-                                return false;
-                            }
-                            if val.as_f64().unwrap() >= value.as_f64().unwrap() {
-                                return true;
-                            } 
-                            return false;
-                        }
-                        "lt" | "<" => {
-                            if val.is_null() {
-                                return false;
-                            }
-                            if val.as_f64().unwrap() < value.as_f64().unwrap() {
-                                return true;
-                            }
-                            return false;
-                        }
-                        "le" | "<=" | "≤" => {
-                            if val.is_null() {
-                                return false;
-                            }
-                            if val.as_f64().unwrap() <= value.as_f64().unwrap() {
-                                return true;
-                            } 
-                            return false;
-                        }
-                        "in" | "∈" => {
-                            match value {
-                                serde_json::Value::Array(arr) => {
-                                    return arr.contains(val)
-                                }
-                                _ => {
-                                    if val == value {
-                                        return true;
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                            }
-                        }
-                        _ => panic!("Unknown operator"),
-                    }
-                }
-            };
-            false
-        },
-        serde_json::Value::Null => true,
-        _ => false
-    }
-}
-
 
 fn vcf_extension_validator(fname: &str) -> Result<String, String> {
     if fname == "-" {
@@ -532,7 +387,7 @@ mod tests {
             let desc = str::from_utf8(reader.header().info(info).unwrap().description).unwrap();
             //if desc.contains(": Allele") {
             if fields.contains(&info_str.to_string()) {
-                csq_headers.insert(info_str.to_string(), parse_csq_header(desc));
+                csq_headers.insert(info_str.to_string(), utils::parse_csq_header(desc));
             }
         }
         Ok((reader, csq_headers, filter))
@@ -592,7 +447,7 @@ mod tests {
             let joined = outer_join(explodeds, &fields_join)?;
             //println!("====================");
             //println!("{}", serde_json::to_string_pretty(&joined)?);
-            let filtered_record: Vec<Map<String, Value>> = joined.into_iter().filter(|x| filter_record(x, &filter)).collect();
+            let filtered_record: Vec<Map<String, Value>> = joined.into_iter().filter(|x| utils::filter_record(x, &filter)).collect();
             results.extend(filtered_record.into_iter());
         }
         assert_eq!(results.len(), 6);
