@@ -1,6 +1,7 @@
 use std::error::Error;
+use std::collections::HashMap;
 use calm_io::stdoutln;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Map, Value, Number};
 use regex::Regex;
 
 pub fn print_line_to_stdout(line: &str) -> Result<(), Box<dyn Error>> {
@@ -24,7 +25,7 @@ pub fn parse_csq_header(header: &str) -> Vec<String> {
 }
 
 pub fn logical_expression_to_json(expression: &str) -> Value {
-    let re = Regex::new(r"(\w+)\s*(==|<=|>=|<|>|in)\s*(\([\w.,\s]+\)|[\w.]+)").unwrap();
+    let re = Regex::new(r"(\w+)\s*(==|=|<=|>=|<|>|in)\s*(\([\w.,\s]+\)|[\w.]+)").unwrap();
 
     let mut json_obj = json!({});
 
@@ -62,7 +63,7 @@ pub fn logical_expression_to_json(expression: &str) -> Value {
                 json_obj = json!({
                     "name": name,
                     "op": op,
-                    "value": value
+                    "value": try_parse_number(value)
                 });
             }
         }
@@ -195,5 +196,154 @@ pub fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
         },
         serde_json::Value::Null => true,
         _ => false
+    }
+}
+
+pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) -> Result<Vec<Map<String, Value>>, Box<dyn Error>> {
+    if tables.len() == 0 {
+        return Ok(vec![]);
+    }
+    if tables.len() != keys.len() {
+        return Err("Number of tables should be equal to the number of keys".into());
+    }
+    // Create a map to hold the result of the outer join
+    // right_table would be the joint table
+    let mut keys = keys.iter().map(|x| x.to_string()).collect::<Vec<String>>();
+    let mut right_table: Vec<Map<String, Value>> = tables.pop().unwrap();
+    let right_key = keys.pop().unwrap();
+    while let Some(mut left_table) = tables.pop() {
+        // get all keys from the left table
+        let left_firstrow = left_table[0].clone();
+        let left_keys = left_firstrow.keys().collect::<Vec<&String>>();
+        let right_firstrow = right_table[0].clone();
+        let right_keys = right_firstrow.keys().collect::<Vec<&String>>();
+        let left_key = keys.pop().unwrap();
+        // Iterate over each entry in the right table, and remove  entries in the left table that are joined
+        right_table.iter_mut().for_each(|right_entry| {
+            let right_value = match right_entry.get(&right_key).unwrap_or(&Value::Null){
+                Value::Null => "__MISSING__",
+                x => x.as_str().unwrap(),
+            }.split(".").collect::<Vec<&str>>();
+            // fight the matching left entry, and delete the left entry from the left table
+            if let Some(left_index) = left_table.iter().position(|left_entry| {
+                let left_value = match left_entry.get(&left_key).unwrap_or(&Value::Null){
+                    Value::Null => "__MISSING__",
+                    x => x.as_str().unwrap(),
+                }.split(".").collect::<Vec<&str>>();
+                left_value.first().unwrap() == right_value.first().unwrap()
+            }) {
+                let left_entry = left_table.remove(left_index);
+                for (k, v) in left_entry {
+                    // skip if the key is already in the entry, and it is not Null
+                    if right_entry.get(&k).unwrap_or(&Value::Null) == &Value::Null {
+                        right_entry.insert(k.to_string(), v);
+                    }
+                }
+            } else {
+                // fill in null to all the keys in the left table that are not in the right table
+                for k in left_keys.clone() {
+                    if right_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
+                        right_entry.insert(k.to_string(), Value::Null);
+                    }
+                }
+            }
+        });
+        // add the left table (whatever left) to the right table. fill missing right keys with null
+        for left_entry in left_table {
+            let mut new_entry = left_entry;
+            for k in right_keys.clone() {
+                if new_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
+                    new_entry.insert(k.to_string(), Value::Null);
+                }
+            }
+            right_table.push(new_entry);
+        }
+    }
+    Ok(right_table)
+}
+
+pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<String, Value>> {
+    // explode on key, but drop the columns in `drops`.
+    // dropping columns is desirable if one row is going to be exploded on multiple keys, and it will result in duplicated columns
+    let mut result: Vec<Map<String, Value>> = vec![];
+    match data.get(key).unwrap_or(&Value::Null) {
+        Value::Array(arr) => {
+            for a in arr {
+                let mut new_record = data.as_object().unwrap().clone();
+                for drop in drops {
+                    new_record.remove(drop);
+                }
+                match a {
+                    Value::Object(map) => {
+                        for (k, v) in map {
+                            let k = format!("{}.{}", key, k);
+                            new_record.insert(k, v.clone());
+                        }
+                        result.push(new_record);
+                    },
+                    _ => panic!("Array should contain objects"),
+                }
+            }
+        },
+        _ => {
+            println!("{:?}", data);
+            println!("{:?}", key);
+            panic!("Data should be an array")
+        },
+    }
+    result
+}
+
+pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
+    // given a data and a header, return a row
+    // for tsv output
+    header.iter().map(|x| {
+        match data.get(x).unwrap_or(&Value::Null) {
+            Value::Null => "".to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.as_str().to_string(),
+            x => x.to_string(),
+        }
+    }).collect::<Vec<String>>()
+}
+
+pub fn get_output_header<'a>(info_header: Vec<&str>, csq_header: &HashMap<String, Vec<String>>) -> Vec<String> {
+    // get the header for csv output
+    // essential columns are in the front. All info columns are in the back, sorted alphabetically.
+    let mut header: Vec<String> = Vec::new();
+    //let  header= vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "ref".to_string(), "alt".to_string(), "qual".to_string(), "filter".to_string(), ];
+    for h in info_header {
+        if csq_header.contains_key(h) {
+            for csq in csq_header.get(h).unwrap() {
+                header.push(format!("info.{}.{}", h, csq));
+            }
+        } else {
+            header.push(format!("info.{}", h));
+        }
+    }
+    // sort header
+    header.sort();
+    // add chromosome, position, id, ref, alt, qual, filter
+    let header = vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "reference".to_string(), "alternative".to_string(), "qual".to_string(), "filter".to_string(), ].iter().chain(header.iter()).map(|x| x.to_string()).collect::<Vec<String>>();
+
+    header
+}
+
+pub fn try_parse_number(input: &str) -> Value {
+    // Can't just rely on VCF header to parse info fields if there are nested ones like CSQ-like fields, 
+    // as their data types are not necessarily exposed in the VCF header.
+    match input {
+        inp if inp.contains('.') || input.contains('e') || input.contains('E') => {
+            // Try to parse as f64
+            match input.parse::<f64>() {
+                Ok(num) => Value::Number(Number::from_f64(num).unwrap()),
+                Err(_) => Value::String(input.to_string()),
+            }
+        },
+        "" => Value::Null,
+        _ =>  match input.parse::<i64>() {
+            Ok(num) => Value::Number(Number::from(num)),
+            Err(_) => Value::String(input.to_string()),
+        }
     }
 }

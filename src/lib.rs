@@ -3,7 +3,6 @@
 use flate2::read::MultiGzDecoder;
 use clap::Parser;
 use rayon::prelude::*;
-use core::panic;
 use std::{fs::File, collections::HashMap, error::Error, str, path::Path};
 use std::io::{self, BufRead, BufReader};
 use vcf::{VCFReader, VCFRecord};
@@ -112,7 +111,7 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
     let info_fields_join = args.fields_join.iter().enumerate().map(|(ind, x)| format!("{}.{}", info_fields[ind], x)).collect::<Vec<String>>();
 
     // if tsv, write the header
-    let tsv_header = get_output_header(info_headers, &csq_headers);
+    let tsv_header = utils::get_output_header(info_headers, &csq_headers);
 
     // flush header and quit if --l
     if args.list {
@@ -133,12 +132,12 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         let line = line.as_bytes() as &[u8];
         let vcf_record = VCFRecord::from_bytes(line, 1, header.clone()).unwrap();
         let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
-        let explodeds = info_fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-        let joined = outer_join(explodeds, &info_fields_join).unwrap();
+        let explodeds = info_fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
+        let joined = utils::outer_join(explodeds, &info_fields_join).unwrap();
         joined.iter().filter(|x| utils::filter_record(x, &filters)).for_each(|x| {
             match args.output_format {
                 OutputFormat::T => {
-                    let row = get_row(x.clone(), &tsv_header);
+                    let row = utils::get_row(x.clone(), &tsv_header);
                     utils::print_line_to_stdout(&row.join("\t")).unwrap();
                 },
                 OutputFormat::J => {
@@ -237,135 +236,7 @@ fn get_styles() -> clap::builder::Styles {
 
 
 
-pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) -> Result<Vec<Map<String, Value>>, Box<dyn Error>> {
-    if tables.len() == 0 {
-        return Ok(vec![]);
-    }
-    if tables.len() != keys.len() {
-        return Err("Number of tables should be equal to the number of keys".into());
-    }
-    // Create a map to hold the result of the outer join
-    // right_table would be the joint table
-    let mut keys = keys.iter().map(|x| x.to_string()).collect::<Vec<String>>();
-    let mut right_table: Vec<Map<String, Value>> = tables.pop().unwrap();
-    let right_key = keys.pop().unwrap();
-    while let Some(mut left_table) = tables.pop() {
-        // get all keys from the left table
-        let left_firstrow = left_table[0].clone();
-        let left_keys = left_firstrow.keys().collect::<Vec<&String>>();
-        let right_firstrow = right_table[0].clone();
-        let right_keys = right_firstrow.keys().collect::<Vec<&String>>();
-        let left_key = keys.pop().unwrap();
-        // Iterate over each entry in the right table, and remove  entries in the left table that are joined
-        right_table.iter_mut().for_each(|right_entry| {
-            let right_value = match right_entry.get(&right_key).unwrap_or(&Value::Null){
-                Value::Null => "__MISSING__",
-                x => x.as_str().unwrap(),
-            }.split(".").collect::<Vec<&str>>();
-            // fight the matching left entry, and delete the left entry from the left table
-            if let Some(left_index) = left_table.iter().position(|left_entry| {
-                let left_value = match left_entry.get(&left_key).unwrap_or(&Value::Null){
-                    Value::Null => "__MISSING__",
-                    x => x.as_str().unwrap(),
-                }.split(".").collect::<Vec<&str>>();
-                left_value.first().unwrap() == right_value.first().unwrap()
-            }) {
-                let left_entry = left_table.remove(left_index);
-                for (k, v) in left_entry {
-                    // skip if the key is already in the entry, and it is not Null
-                    if right_entry.get(&k).unwrap_or(&Value::Null) == &Value::Null {
-                        right_entry.insert(k.to_string(), v);
-                    }
-                }
-            } else {
-                // fill in null to all the keys in the left table that are not in the right table
-                for k in left_keys.clone() {
-                    if right_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
-                        right_entry.insert(k.to_string(), Value::Null);
-                    }
-                }
-            }
-        });
-        // add the left table (whatever left) to the right table. fill missing right keys with null
-        for left_entry in left_table {
-            let mut new_entry = left_entry;
-            for k in right_keys.clone() {
-                if new_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
-                    new_entry.insert(k.to_string(), Value::Null);
-                }
-            }
-            right_table.push(new_entry);
-        }
-    }
-    Ok(right_table)
-}
 
-pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<String, Value>> {
-    // explode on key, but drop the columns in `drops`.
-    // dropping columns is desirable if one row is going to be exploded on multiple keys, and it will result in duplicated columns
-    let mut result: Vec<Map<String, Value>> = vec![];
-    match data.get(key).unwrap_or(&Value::Null) {
-        Value::Array(arr) => {
-            for a in arr {
-                let mut new_record = data.as_object().unwrap().clone();
-                for drop in drops {
-                    new_record.remove(drop);
-                }
-                match a {
-                    Value::Object(map) => {
-                        for (k, v) in map {
-                            let k = format!("{}.{}", key, k);
-                            new_record.insert(k, v.clone());
-                        }
-                        result.push(new_record);
-                    },
-                    _ => panic!("Array should contain objects"),
-                }
-            }
-        },
-        _ => {
-            println!("{:?}", data);
-            println!("{:?}", key);
-            panic!("Data should be an array")
-        },
-    }
-    result
-}
-
-pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
-    // given a data and a header, return a row
-    // for tsv output
-    header.iter().map(|x| {
-        match data.get(x).unwrap_or(&Value::Null) {
-            Value::Null => "".to_string(),
-            Value::Number(n) => n.to_string(),
-            Value::String(s) => s.as_str().to_string(),
-            x => x.to_string(),
-        }
-    }).collect::<Vec<String>>()
-}
-
-pub fn get_output_header<'a>(info_header: Vec<&str>, csq_header: &HashMap<String, Vec<String>>) -> Vec<String> {
-    // get the header for csv output
-    // essential columns are in the front. All info columns are in the back, sorted alphabetically.
-    let mut header: Vec<String> = Vec::new();
-    //let  header= vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "ref".to_string(), "alt".to_string(), "qual".to_string(), "filter".to_string(), ];
-    for h in info_header {
-        if csq_header.contains_key(h) {
-            for csq in csq_header.get(h).unwrap() {
-                header.push(format!("info.{}.{}", h, csq));
-            }
-        } else {
-            header.push(format!("info.{}", h));
-        }
-    }
-    // sort header
-    header.sort();
-    // add chromosome, position, id, ref, alt, qual, filter
-    let header = vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "reference".to_string(), "alternative".to_string(), "qual".to_string(), "filter".to_string(), ].iter().chain(header.iter()).map(|x| x.to_string()).collect::<Vec<String>>();
-
-    header
-}
 
 #[cfg(test)]
 mod tests {
@@ -415,7 +286,7 @@ mod tests {
             let info_str = str::from_utf8(&info)?;
             info_headers.push(&info_str);
         }
-        let header = get_output_header(info_headers, &csq_headers);
+        let header = utils::get_output_header(info_headers, &csq_headers);
         let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who"];
         assert_eq!(header, expected);
         Ok(())
@@ -423,7 +294,7 @@ mod tests {
     #[test]
     fn test_explode_data() -> Result<(), Box<dyn Error>> {
         let data = serde_json::from_str(r#"{"a":1, "b":2, "c":[{"foo":"A","bar":"B"},{"foo":"a", "bar":"b"}]}"#)?;
-        let exploded = explode_data(data, "c", &vec!["b".to_string(),"c".to_string()]);
+        let exploded = utils::explode_data(data, "c", &vec!["b".to_string(),"c".to_string()]);
         let expected: Vec<Map<String, Value>> = vec![
             serde_json::from_str(r#"{"a":1, "c.foo":"A", "c.bar":"B"}"#).unwrap(),
             serde_json::from_str(r#"{"a":1, "c.foo":"a", "c.bar":"b"}"#).unwrap(),
@@ -443,8 +314,8 @@ mod tests {
             let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             //let val = serde_json::to_value(&variant)?;
             //println!("{:?}", serde_json::to_string(&variant)?);
-            let explodeds = fields.iter().map(|x| explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-            let joined = outer_join(explodeds, &fields_join)?;
+            let explodeds = fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
+            let joined = utils::outer_join(explodeds, &fields_join)?;
             //println!("====================");
             //println!("{}", serde_json::to_string_pretty(&joined)?);
             let filtered_record: Vec<Map<String, Value>> = joined.into_iter().filter(|x| utils::filter_record(x, &filter)).collect();
@@ -464,7 +335,7 @@ mod tests {
             serde_json::from_str(r#"{"key1": "value1", "key3": "value6"}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value7", "key3": "value8"}"#).unwrap(),
         ];
-        let joined_table = outer_join(vec![table1, table2], &vec!["key1".to_string(), "key1".to_string()])?;
+        let joined_table = utils::outer_join(vec![table1, table2], &vec!["key1".to_string(), "key1".to_string()])?;
         let expected: Vec<Map<String, Value>> = vec![
             serde_json::from_str(r#"{"key1": "value1", "key2": "value2", "key3": "value6"}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value7", "key2": null, "key3": "value8"}"#).unwrap(),
@@ -483,7 +354,7 @@ mod tests {
             serde_json::from_str(r#"{"key1": "value1", "key3": null}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value7", "key3": "value8"}"#).unwrap(),
         ];
-        let joined_table = outer_join(vec![table1, table2], &vec!["key1".to_string(), "key1".to_string()])?;
+        let joined_table = utils::outer_join(vec![table1, table2], &vec!["key1".to_string(), "key1".to_string()])?;
         let expected: Vec<Map<String, Value>> = vec![
             serde_json::from_str(r#"{"key1": "value1", "key2": "value2", "key3": null}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value7", "key2": null, "key3": "value8"}"#).unwrap(),
@@ -502,13 +373,72 @@ mod tests {
             serde_json::from_str(r#"{"key11": "value1.8", "key2": "value2"}"#).unwrap(),
             serde_json::from_str(r#"{"key11": "value7", "key2": "value8"}"#).unwrap(),
         ];
-        let joined_table = outer_join(vec![table1, table2], &vec!["key1".to_string(), "key11".to_string()])?;
+        let joined_table = utils::outer_join(vec![table1, table2], &vec!["key1".to_string(), "key11".to_string()])?;
         let expected: Vec<Map<String, Value>> = vec![
             serde_json::from_str(r#"{"key1": "value1", "key11": "value1.8", "key2": "value2"}"#).unwrap(),
             serde_json::from_str(r#"{"key1": null, "key11": "value7", "key2": "value8"}"#).unwrap(),
             serde_json::from_str(r#"{"key1": "value3", "key11": null, "key2": "value4"}"#).unwrap(),
         ];
         assert_eq!(joined_table, expected);
+        Ok(())
+    }
+    
+    #[test]
+    fn test_logic_expression_to_json() -> Result<(), Box<dyn Error>> {
+        let tests = [
+            ("canonical = YES", serde_json::json!({"name": "canonical", "op": "=", "value": "YES"})),
+            ("canonical == YES and (symbol in (aaa,bbb) or cadd >20)", serde_json::json!({
+                "AND": [
+                    {"name": "canonical", "op": "==", "value": "YES"},
+                    {"OR": [
+                        {"name": "symbol", "op": "in", "value": ["aaa", "bbb"]},
+                        {"name": "cadd", "op": ">", "value": 20}
+                        ]}
+                ]
+            })),
+            ("(af <= 0.01 and (impact == high or impact == moderate)) and (cadd >=20 or pangolin >= 0.5)",
+            serde_json::json!({
+                "AND": [
+                    {
+                    "name": "af",
+                    "op": "<=",
+                    "value": 0.01
+                    },
+                    {
+                    "OR": [
+                        {
+                        "name": "impact",
+                        "op": "==",
+                        "value": "high"
+                        },
+                        {
+                        "name": "impact",
+                        "op": "==",
+                        "value": "moderate"
+                        }
+                    ]
+                    },
+                    {
+                    "OR": [
+                        {
+                        "name": "cadd",
+                        "op": ">=",
+                        "value": 20
+                        },
+                        {
+                        "name": "pangolin",
+                        "op": ">=",
+                        "value": 0.5
+                        }
+                    ]
+                    }
+                ]
+            })),
+        ];
+        for (expr, expected) in tests.iter() {
+            let json_obj = utils::logical_expression_to_json(expr);
+            assert_eq!(&json_obj, expected);
+        }
         Ok(())
     }
 }
