@@ -44,6 +44,10 @@ pub struct Args {
     #[arg(short, long, default_value = "-")]
     filter: String,
 
+    /// list of columns available for query/output
+    #[arg(short, long, default_value_t = false)]
+    list: bool,
+
     /// nested fields with | separator to parse, such as CSQ
     #[arg(long, value_parser, value_delimiter = ',', default_value = "CSQ")]
     fields: Vec<String>,
@@ -123,6 +127,12 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
 
     // if tsv, write the header
     let tsv_header = get_output_header(info_headers, &csq_headers);
+
+    // flush header and quit if --l
+    if args.list {
+        print_line_to_stdout(&tsv_header.join("\n"))?;
+        return Ok(());
+    }
     if args.output_format == OutputFormat::T {
         
         print_line_to_stdout(&tsv_header.join("\t"))?;
