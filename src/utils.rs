@@ -1,8 +1,7 @@
 use std::error::Error;
 use std::collections::HashMap;
 use calm_io::stdoutln;
-use serde_json::{json, Map, Value, Number};
-use regex::Regex;
+use serde_json::{Map, Value, Number};
 
 pub fn print_line_to_stdout(line: &str) -> Result<(), Box<dyn Error>> {
     // output line to stdout.
