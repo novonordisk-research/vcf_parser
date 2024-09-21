@@ -35,12 +35,15 @@ Parse multiple CSQ-like fields and join by transcript_id, and filter variants as
 vcf_parser -i test/test.vcf --fields CSQ,Pangolin --fields-join Feature,pangolin_transcript -f filter.yml --output-format j >output.json
 ```
 
+An example of `filter.yml` can be found in the `test/` folder. You can replace `eq` with `=` or `==`, `le` with `<=` or `≤`, etc.
+
 ### Options
 ```
 -h #help 
 -i <input.vcf[.gz]>  
 -f <filter.yaml>
 -t <thread number>
+-l # to list columns and exit
 --output-format <j|t> #j for json, t for tsv
 --fields #fields to explode. default to CSQ
 --fields-join #keys to join fields, in the same order
