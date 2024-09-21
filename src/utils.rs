@@ -24,54 +24,6 @@ pub fn parse_csq_header(header: &str) -> Vec<String> {
         .collect::<Vec<String>>()
 }
 
-pub fn logical_expression_to_json(expression: &str) -> Value {
-    let re = Regex::new(r"(\w+)\s*(==|=|<=|>=|<|>|in)\s*(\([\w.,\s]+\)|[\w.]+)").unwrap();
-
-    let mut json_obj = json!({});
-
-    if expression.contains("and") {
-        let parts: Vec<&str> = expression.split("and").collect();
-        let mut and_arr = vec![];
-        for part in parts {
-            and_arr.push(logical_expression_to_json(part.trim()));
-        }
-        json_obj["AND"] = Value::Array(and_arr);
-    } else if expression.contains("or") {
-        let parts: Vec<&str> = expression.split("or").collect();
-        let mut or_arr = vec![];
-        for part in parts {
-            or_arr.push(logical_expression_to_json(part.trim()));
-        }
-        json_obj["OR"] = Value::Array(or_arr);
-    } else {
-        if let Some(captures) = re.captures(expression) {
-            let name = captures.get(1).unwrap().as_str();
-            let op = captures.get(2).unwrap().as_str();
-            let value = captures.get(3).unwrap().as_str();
-            if op == "in" {
-                let value_list: Vec<&str> = value
-                    .trim_matches(|c| c == '(' || c == ')')
-                    .split(',')
-                    .map(|s| s.trim())
-                    .collect();
-                json_obj = json!({
-                    "name": name,
-                    "op": op,
-                    "value": value_list
-                });
-            } else {
-                json_obj = json!({
-                    "name": name,
-                    "op": op,
-                    "value": try_parse_number(value)
-                });
-            }
-        }
-    }
-
-    json_obj
-}
-
 pub fn filter_record(record: &Map<String,Value>, filters: &Value) -> bool {
     // filter the variant based on the filters. Filter is like:
     /*
