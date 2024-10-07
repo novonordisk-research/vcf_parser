@@ -3,6 +3,7 @@ use serde_json::{Map, Number, Value};
 use vcf::VCFRecord;
 use std::collections::HashMap;
 use std::str;
+use crate::utils;
 
 serde_with::with_prefix!(prefix_info "info.");
 
@@ -121,7 +122,7 @@ impl Variant {
                                     .zip(str::from_utf8(csq_field).unwrap().split("|"));
                                 let mut csq = Map::new();
                                 for (k, v) in csq_vec {
-                                    csq.insert(k.to_string(), try_parse_number(v));
+                                    csq.insert(k.to_string(), utils::try_parse_number(v));
                                 }
                                 Value::Object(csq)
                             })
@@ -190,21 +191,3 @@ impl Variant {
     }
 }
 
-fn try_parse_number(input: &str) -> Value {
-    // Can't just rely on VCF header to parse info fields if there are nested ones like CSQ-like fields, 
-    // as their data types are not necessarily exposed in the VCF header.
-    match input {
-        inp if inp.contains('.') || input.contains('e') || input.contains('E') => {
-            // Try to parse as f64
-            match input.parse::<f64>() {
-                Ok(num) => Value::Number(Number::from_f64(num).unwrap()),
-                Err(_) => Value::String(input.to_string()),
-            }
-        },
-        "" => Value::Null,
-        _ =>  match input.parse::<i64>() {
-            Ok(num) => Value::Number(Number::from(num)),
-            Err(_) => Value::String(input.to_string()),
-        }
-    }
-}
