@@ -294,10 +294,26 @@ mod tests {
             let info_str = str::from_utf8(&info)?;
             info_headers.push(&info_str);
         }
-        let header = utils::get_output_header(info_headers, &csq_headers);
+        let header = utils::get_output_header(info_headers.clone(), &csq_headers, &None);
         let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who"];
         assert_eq!(header, expected);
+
+        let header = utils::get_output_header(info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "reference".to_string()]));
+        let expected = vec!["info.CSQ.Consequence", "reference"];
+        assert_eq!(header, expected);
+
         Ok(())
+    }
+    #[test]
+    #[should_panic]
+    fn test_get_output_header_panic() {
+        let (reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()]).unwrap();
+        let mut info_headers: Vec<&str> = Vec::new();
+        for info in reader.header().info_list() {
+            let info_str = str::from_utf8(&info).unwrap();
+            info_headers.push(&info_str);
+        }
+        utils::get_output_header(info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "doesnotexist".to_string()]));
     }
     #[test]
     fn test_explode_data() -> Result<(), Box<dyn Error>> {
