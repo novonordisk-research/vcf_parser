@@ -258,11 +258,10 @@ pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
     }).collect::<Vec<String>>()
 }
 
-pub fn get_output_header<'a>(info_header: Vec<&str>, csq_header: &HashMap<String, Vec<String>>) -> Vec<String> {
+pub fn get_output_header<'a>(info_header: Vec<&str>, csq_header: &HashMap<String, Vec<String>>, user_columns: &Option<Vec<String>>) -> Vec<String> {
     // get the header for csv output
     // essential columns are in the front. All info columns are in the back, sorted alphabetically.
     let mut header: Vec<String> = Vec::new();
-    //let  header= vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "ref".to_string(), "alt".to_string(), "qual".to_string(), "filter".to_string(), ];
     for h in info_header {
         if csq_header.contains_key(h) {
             for csq in csq_header.get(h).unwrap() {
@@ -277,7 +276,19 @@ pub fn get_output_header<'a>(info_header: Vec<&str>, csq_header: &HashMap<String
     // add chromosome, position, id, ref, alt, qual, filter
     let header = vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "reference".to_string(), "alternative".to_string(), "qual".to_string(), "filter".to_string(), ].iter().chain(header.iter()).map(|x| x.to_string()).collect::<Vec<String>>();
 
-    header
+    // if user_columns is None, then all columns are selected
+    // validate if user_columns are a subset of header
+    match user_columns {
+        Some(user_columns) => {
+            for user_column in user_columns {
+                if !header.contains(&user_column) {
+                    panic!("Column {} is not in the header", user_column);
+                }
+            }
+            user_columns.clone()
+        },
+        None => header,
+    }
 }
 
 pub fn try_parse_number(input: &str) -> Value {

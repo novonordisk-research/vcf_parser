@@ -41,6 +41,10 @@ pub struct Args {
     #[arg(long, value_parser, value_delimiter = ',', default_value = "Feature")]
     fields_join: Vec<String>,
 
+    /// specify output columns
+    #[arg(short, long, value_delimiter = ',')]
+    columns: Option<Vec<String>>,
+
     /// output format.
     #[arg(long, default_value_t, value_enum)]
     output_format: OutputFormat,
@@ -111,13 +115,15 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
     let info_fields_join = args.fields_join.iter().enumerate().map(|(ind, x)| format!("{}.{}", info_fields[ind], x)).collect::<Vec<String>>();
 
     // if tsv, write the header
-    let tsv_header = utils::get_output_header(info_headers, &csq_headers);
+    let tsv_header = utils::get_output_header(info_headers, &csq_headers, &args.columns);
 
     // flush header and quit if --l
     if args.list {
         utils::print_line_to_stdout(&tsv_header.join("\n"))?;
         return Ok(());
     }
+
+    // write tsv header to stdout
     if args.output_format == OutputFormat::T {
         
         utils::print_line_to_stdout(&tsv_header.join("\t"))?;
@@ -268,13 +274,15 @@ mod tests {
     fn test_variants() -> Result<(), Box<dyn Error>> {
         let (mut reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut vcf_record = reader.empty_record();
-        let mut variants:Vec<Variant> = Vec::new();
+        let mut variants: Vec<Variant> = Vec::new();
+        
         while reader.next_record(&mut vcf_record).unwrap() {
             let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             variants.push(variant);
             
         }
         assert!(variants.len() == 5);
+        
         Ok(())
     }
 
