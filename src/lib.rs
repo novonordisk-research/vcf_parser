@@ -18,16 +18,16 @@ mod utils;
 #[command(styles=get_styles())]
 pub struct Args {
     /// input .vcf[.gz] file, or ignore to read from stdin
-    #[arg(short, long, value_parser = vcf_extension_validator, default_value = "-")]
-    input: String,
+    #[arg(short, long, value_parser = vcf_extension_validator)]
+    input: Option<String>,
 
     /// threads to use, default to use all available
     #[arg(short, long, default_value_t = 0)]
     threads: usize,
 
     /// filter yaml file to use
-    #[arg(short, long, default_value = "-")]
-    filter: String,
+    #[arg(short, long)]
+    filter: Option<String>,
 
     /// list of columns available for query/output
     #[arg(short, long, default_value_t = false)]
@@ -71,21 +71,21 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
             .unwrap();
     }
     // read filter if given
-    let filters: serde_json::Value = if args.filter == "-" {
-        serde_json::Value::Null
-    } else {
-        let filter_file = File::open(args.filter)?;
+    let filters: serde_json::Value = if let Some(file_name) = args.filter  {
+        let filter_file = File::open(file_name)?;
         serde_yaml::from_reader(filter_file)?
+    } else {
+        serde_json::Value::Null
     };
 
     // read input.
     // if "-", read from stdin.
     // if *.vcf.gz, use gzdecoder
     // otherwise just plain text read
-    let reader: Box<dyn BufRead + Send + Sync> = match args.input.as_str() {
-        "-" => Box::new(BufReader::new(io::stdin())),
-        inp if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(args.input)?))),
-        _ => Box::new(BufReader::new(File::open(args.input)?))
+    let reader: Box<dyn BufRead + Send + Sync> = match args.input {
+        None => Box::new(BufReader::new(io::stdin())),
+        Some(inp) if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(inp)?))),
+        Some(rest) => Box::new(BufReader::new(File::open(rest)?))
     };
 
     /* 
