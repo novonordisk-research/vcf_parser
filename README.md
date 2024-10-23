@@ -44,6 +44,7 @@ An example of `filter.yml` can be found in the `test/` folder. You can replace `
 -f <filter.yaml>
 -t <thread number>
 -l # to list columns and exit
+-c <columns to output>
 --output-format <j|t> #j for json, t for tsv
 --fields #fields to explode. default to CSQ
 --fields-join #keys to join fields, in the same order

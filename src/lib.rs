@@ -18,16 +18,16 @@ mod utils;
 #[command(styles=get_styles())]
 pub struct Args {
     /// input .vcf[.gz] file, or ignore to read from stdin
-    #[arg(short, long, value_parser = vcf_extension_validator, default_value = "-")]
-    input: String,
+    #[arg(short, long, value_parser = vcf_extension_validator)]
+    input: Option<String>,
 
     /// threads to use, default to use all available
     #[arg(short, long, default_value_t = 0)]
     threads: usize,
 
     /// filter yaml file to use
-    #[arg(short, long, default_value = "-")]
-    filter: String,
+    #[arg(short, long)]
+    filter: Option<String>,
 
     /// list of columns available for query/output
     #[arg(short, long, default_value_t = false)]
@@ -40,6 +40,10 @@ pub struct Args {
     /// nested fields join together on e.g. transcript id, such as Feature
     #[arg(long, value_parser, value_delimiter = ',', default_value = "Feature")]
     fields_join: Vec<String>,
+
+    /// specify output columns
+    #[arg(short, long, value_delimiter = ',')]
+    columns: Option<Vec<String>>,
 
     /// output format.
     #[arg(long, default_value_t, value_enum)]
@@ -67,21 +71,21 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
             .unwrap();
     }
     // read filter if given
-    let filters: serde_json::Value = if args.filter == "-" {
-        serde_json::Value::Null
-    } else {
-        let filter_file = File::open(args.filter)?;
+    let filters: serde_json::Value = if let Some(file_name) = args.filter  {
+        let filter_file = File::open(file_name)?;
         serde_yaml::from_reader(filter_file)?
+    } else {
+        serde_json::Value::Null
     };
 
     // read input.
     // if "-", read from stdin.
     // if *.vcf.gz, use gzdecoder
     // otherwise just plain text read
-    let reader: Box<dyn BufRead + Send + Sync> = match args.input.as_str() {
-        "-" => Box::new(BufReader::new(io::stdin())),
-        inp if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(args.input)?))),
-        _ => Box::new(BufReader::new(File::open(args.input)?))
+    let reader: Box<dyn BufRead + Send + Sync> = match args.input {
+        None => Box::new(BufReader::new(io::stdin())),
+        Some(inp) if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(inp)?))),
+        Some(rest) => Box::new(BufReader::new(File::open(rest)?))
     };
 
     /* 
@@ -111,13 +115,15 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
     let info_fields_join = args.fields_join.iter().enumerate().map(|(ind, x)| format!("{}.{}", info_fields[ind], x)).collect::<Vec<String>>();
 
     // if tsv, write the header
-    let tsv_header = utils::get_output_header(info_headers, &csq_headers);
+    let tsv_header = utils::get_output_header(info_headers, &csq_headers, &args.columns);
 
     // flush header and quit if --l
     if args.list {
         utils::print_line_to_stdout(&tsv_header.join("\n"))?;
         return Ok(());
     }
+
+    // write tsv header to stdout
     if args.output_format == OutputFormat::T {
         
         utils::print_line_to_stdout(&tsv_header.join("\t"))?;
@@ -268,13 +274,15 @@ mod tests {
     fn test_variants() -> Result<(), Box<dyn Error>> {
         let (mut reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut vcf_record = reader.empty_record();
-        let mut variants:Vec<Variant> = Vec::new();
+        let mut variants: Vec<Variant> = Vec::new();
+        
         while reader.next_record(&mut vcf_record).unwrap() {
             let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
             variants.push(variant);
             
         }
         assert!(variants.len() == 5);
+        
         Ok(())
     }
 
@@ -286,10 +294,26 @@ mod tests {
             let info_str = str::from_utf8(&info)?;
             info_headers.push(&info_str);
         }
-        let header = utils::get_output_header(info_headers, &csq_headers);
+        let header = utils::get_output_header(info_headers.clone(), &csq_headers, &None);
         let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who"];
         assert_eq!(header, expected);
+
+        let header = utils::get_output_header(info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "reference".to_string()]));
+        let expected = vec!["info.CSQ.Consequence", "reference"];
+        assert_eq!(header, expected);
+
         Ok(())
+    }
+    #[test]
+    #[should_panic]
+    fn test_get_output_header_panic() {
+        let (reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()]).unwrap();
+        let mut info_headers: Vec<&str> = Vec::new();
+        for info in reader.header().info_list() {
+            let info_str = str::from_utf8(&info).unwrap();
+            info_headers.push(&info_str);
+        }
+        utils::get_output_header(info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "doesnotexist".to_string()]));
     }
     #[test]
     fn test_explode_data() -> Result<(), Box<dyn Error>> {
