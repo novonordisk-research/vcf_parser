@@ -258,7 +258,7 @@ pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
     }).collect::<Vec<String>>()
 }
 
-pub fn get_output_header<'a>(info_header: Vec<&str>, csq_header: &HashMap<String, Vec<String>>, user_columns: &Option<Vec<String>>) -> Vec<String> {
+pub fn get_output_header<'a>(info_header: &Vec<String>, csq_header: &HashMap<String, Vec<String>>, user_columns: &Option<Vec<String>>) -> Vec<String> {
     // get the header for csv output
     // essential columns are in the front. All info columns are in the back, sorted alphabetically.
     let mut header: Vec<String> = Vec::new();
