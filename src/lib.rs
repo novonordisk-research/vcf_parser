@@ -64,37 +64,37 @@ pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
     } else {
         serde_json::Value::Null
     };
-    let vcf_parser = VcfParser::new(filters, args.fields, args.fields_join, args.columns, args.output_format)?;
+    
     let reader: Box<dyn BufRead + Send + Sync> = match args.input {
         None => Box::new(BufReader::new(io::stdin())),
         Some(inp) if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(inp)?))),
         Some(rest) => Box::new(BufReader::new(File::open(rest)?))
     };
-    let mut vcf_parser = vcf_parser.with_reader(reader)?.with_headers()?;
+    let vcf_parser = VcfParser::new(filters, args.fields, args.fields_join, args.columns, args.output_format, reader)?;
 
     // if --list, print the headers and quit
     if args.list {
-        let header = vcf_parser.tsv_headers.as_ref().unwrap();
+        let header = vcf_parser.tsv_headers;
         utils::print_line_to_stdout(&header.join("\n"))?;
         return Ok(());
     }
     // write tsv header to stdout
-    let tsv_header = vcf_parser.tsv_headers.as_ref().unwrap().clone();
+    let tsv_header = vcf_parser.tsv_headers;
     if vcf_parser.output_format == OutputFormat::T {
         
         utils::print_line_to_stdout(&tsv_header.join("\t"))?;
     }
     
     // parallel processing each variant/site
-    let reader = vcf_parser.into_reader();
-    reader.reader.lines().par_bridge().for_each(|line| {
+    
+    vcf_parser.reader.reader.lines().par_bridge().for_each(|line| {
         let line = line.unwrap();
         if line.starts_with("#") {
             return;
         }
         let line = line.as_bytes() as &[u8];
-        let vcf_record = VCFRecord::from_bytes(line, 1, vcf_parser.header()).unwrap();
-        let variant = Variant::new(&vcf_record, vcf_parser.header().samples(), &vcf_parser.csq_headers());
+        let vcf_record = VCFRecord::from_bytes(line, 1, (*vcf_parser.header).clone()).unwrap();
+        let variant = Variant::new(&vcf_record, vcf_parser.header.samples(), &vcf_parser.csq_headers);
         let explodeds = vcf_parser.info_fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &vcf_parser.info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
         let joined = utils::outer_join(explodeds, &vcf_parser.fields_join).unwrap();
         joined.iter().filter(|x| utils::filter_record(x, &vcf_parser.filters)).for_each(|x| {
@@ -250,11 +250,11 @@ mod tests {
             let info_str = str::from_utf8(&info)?;
             info_headers.push(info_str.to_string());
         }
-        let header = utils::get_output_header(info_headers.clone(), &csq_headers, &None);
+        let header = utils::get_output_header(&info_headers, &csq_headers, &None);
         let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who"];
         assert_eq!(header, expected);
 
-        let header = utils::get_output_header(info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "reference".to_string()]));
+        let header = utils::get_output_header(&info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "reference".to_string()]));
         let expected = vec!["info.CSQ.Consequence", "reference"];
         assert_eq!(header, expected);
 
@@ -269,7 +269,7 @@ mod tests {
             let info_str = str::from_utf8(&info).unwrap();
             info_headers.push(info_str.to_string());
         }
-        utils::get_output_header(info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "doesnotexist".to_string()]));
+        utils::get_output_header(&info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "doesnotexist".to_string()]));
     }
     #[test]
     fn test_explode_data() -> Result<(), Box<dyn Error>> {
