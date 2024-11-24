@@ -13,9 +13,9 @@ use serde::Serialize;
 use anyhow::Result;
 
 pub mod vcfparser;
-mod variant;
-mod utils;
-mod error;
+pub mod variant;
+pub mod utils;
+pub mod error;
 
 #[derive(Parser)]
 #[command(version = "0.2.2", about = "Read a (normalised) .vcf[.gz] and output tsv/json. CSQ-aware.", long_about = None)]
