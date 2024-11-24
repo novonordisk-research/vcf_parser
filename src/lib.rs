@@ -3,15 +3,19 @@
 use flate2::read::MultiGzDecoder;
 use clap::Parser;
 use rayon::prelude::*;
-use std::{fs::File, collections::HashMap, error::Error, str, path::Path};
+use vcfparser::VcfParser;
+use std::{fs::File, error::Error, str, path::Path};
 use std::io::{self, BufRead, BufReader};
-use vcf::{VCFReader, VCFRecord};
+use vcf::VCFRecord;
 use crate::variant::Variant;
 use serde_json::{Map, Value};
 use serde::Serialize;
+use anyhow::Result;
 
+pub mod vcfparser;
 mod variant;
 mod utils;
+mod error;
 
 #[derive(Parser)]
 #[command(version = "0.2.2", about = "Read a (normalised) .vcf[.gz] and output tsv/json. CSQ-aware.", long_about = None)]
@@ -50,26 +54,9 @@ pub struct Args {
     output_format: OutputFormat,
 }
 
-pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
-    // if args.fields is greater than 1, then its length should be the same with args.fields_join
-    // if args.fields is 1, then args.fields_join
-    if args.fields.len() >1 && args.fields.len() != args.fields_join.len() {
-        return Err("Number of fields should be equal to the number of fields_join".into());
-    }
-    // if thread is not 0, set the number of threads
-    if args.threads > 0 {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(args.threads)
-            .build_global()
-            .unwrap();
-    }
-    // if thread is not 0, set the number of threads
-    if args.threads > 0 {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(args.threads)
-            .build_global()
-            .unwrap();
-    }
+
+
+pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
     // read filter if given
     let filters: serde_json::Value = if let Some(file_name) = args.filter  {
         let filter_file = File::open(file_name)?;
@@ -77,71 +64,41 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
     } else {
         serde_json::Value::Null
     };
-
-    // read input.
-    // if "-", read from stdin.
-    // if *.vcf.gz, use gzdecoder
-    // otherwise just plain text read
+    let vcf_parser = VcfParser::new(filters, args.fields, args.fields_join, args.columns, args.output_format)?;
     let reader: Box<dyn BufRead + Send + Sync> = match args.input {
         None => Box::new(BufReader::new(io::stdin())),
         Some(inp) if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(inp)?))),
         Some(rest) => Box::new(BufReader::new(File::open(rest)?))
     };
+    let mut vcf_parser = vcf_parser.with_reader(reader)?.with_headers()?;
 
-    /* 
-    vcfrs reads the vcf header from the stream, then reads a variant/site at a time to couple with the header to make a VCFRecord.
-    To enable multithread, I would need to make a VCFRecord in each thread when it reads a line, and couple it with the header.
-    This would require the access of a private method (VCFRecord::reader) in the vcfrs repo, which isn't possible. Therefore I forked that repo and exposed the field..
-    */
-
-    let reader = VCFReader::new(reader)?;
-    // get info and csq-like headers
-    let mut info_headers: Vec<&str> = Vec::new();
-    let mut csq_headers: HashMap<String, Vec<String>> = HashMap::new();
-    for info in reader.header().info_list() {
-        let info_str = str::from_utf8(&info)?;
-        info_headers.push(&info_str);
-        let desc = str::from_utf8(reader.header().info(info).unwrap().description).unwrap();
-        if args.fields.contains(&info_str.to_string()) {
-            csq_headers.insert(info_str.to_string(), utils::parse_csq_header(desc));
-        }
-    }
-    let header = reader.header().clone();
-    
-
-    // info_fields are fields with 'info.' prefix, so CSQ becomes info.CSQ
-    let info_fields = args.fields.iter().map(|x| format!("info.{}", x)).collect::<Vec<String>>();
-    // Feature becomes info.CSQ.Feature
-    let info_fields_join = args.fields_join.iter().enumerate().map(|(ind, x)| format!("{}.{}", info_fields[ind], x)).collect::<Vec<String>>();
-
-    // if tsv, write the header
-    let tsv_header = utils::get_output_header(info_headers, &csq_headers, &args.columns);
-
-    // flush header and quit if --l
+    // if --list, print the headers and quit
     if args.list {
-        utils::print_line_to_stdout(&tsv_header.join("\n"))?;
+        let header = vcf_parser.tsv_headers.as_ref().unwrap();
+        utils::print_line_to_stdout(&header.join("\n"))?;
         return Ok(());
     }
-
     // write tsv header to stdout
-    if args.output_format == OutputFormat::T {
+    let tsv_header = vcf_parser.tsv_headers.as_ref().unwrap().clone();
+    if vcf_parser.output_format == OutputFormat::T {
         
         utils::print_line_to_stdout(&tsv_header.join("\t"))?;
     }
     
     // parallel processing each variant/site
+    let reader = vcf_parser.into_reader();
     reader.reader.lines().par_bridge().for_each(|line| {
         let line = line.unwrap();
         if line.starts_with("#") {
             return;
         }
         let line = line.as_bytes() as &[u8];
-        let vcf_record = VCFRecord::from_bytes(line, 1, header.clone()).unwrap();
-        let variant = Variant::new(&vcf_record, header.samples(), &csq_headers);
-        let explodeds = info_fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
-        let joined = utils::outer_join(explodeds, &info_fields_join).unwrap();
-        joined.iter().filter(|x| utils::filter_record(x, &filters)).for_each(|x| {
-            match args.output_format {
+        let vcf_record = VCFRecord::from_bytes(line, 1, vcf_parser.header()).unwrap();
+        let variant = Variant::new(&vcf_record, vcf_parser.header().samples(), &vcf_parser.csq_headers());
+        let explodeds = vcf_parser.info_fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &vcf_parser.info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
+        let joined = utils::outer_join(explodeds, &vcf_parser.fields_join).unwrap();
+        joined.iter().filter(|x| utils::filter_record(x, &vcf_parser.filters)).for_each(|x| {
+            match vcf_parser.output_format {
                 OutputFormat::T => {
                     let row = utils::get_row(x.clone(), &tsv_header);
                     utils::print_line_to_stdout(&row.join("\t")).unwrap();
@@ -158,18 +115,15 @@ pub fn run(args:Args) -> Result<(), Box<dyn Error>> {
         
         
     });
-    
     Ok(())
 }
-
-
 
 #[derive(
     clap::ValueEnum, Clone, Default, Debug, Serialize,
 )]
 #[derive(PartialEq)]
 #[serde(rename_all = "kebab-case")]
-enum OutputFormat {
+pub enum OutputFormat {
     /// tsv
     #[default]
     T,
@@ -247,6 +201,8 @@ fn get_styles() -> clap::builder::Styles {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use vcf::VCFReader;
     pub fn prepare_test(fields:&Vec<String>)-> Result<(VCFReader<Box<dyn BufRead + Send + Sync>>, HashMap<String, Vec<String>>, Value), Box<dyn Error>> {
         let filter_file = File::open("test/filter.yml")?;
         let filter = serde_yaml::from_reader(filter_file)?;
@@ -289,10 +245,10 @@ mod tests {
     #[test]
     fn test_get_output_header() -> Result<(), Box<dyn Error>> {
         let (reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
-        let mut info_headers: Vec<&str> = Vec::new();
+        let mut info_headers: Vec<String> = Vec::new();
         for info in reader.header().info_list() {
             let info_str = str::from_utf8(&info)?;
-            info_headers.push(&info_str);
+            info_headers.push(info_str.to_string());
         }
         let header = utils::get_output_header(info_headers.clone(), &csq_headers, &None);
         let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who"];
@@ -308,10 +264,10 @@ mod tests {
     #[should_panic]
     fn test_get_output_header_panic() {
         let (reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()]).unwrap();
-        let mut info_headers: Vec<&str> = Vec::new();
+        let mut info_headers: Vec<String> = Vec::new();
         for info in reader.header().info_list() {
             let info_str = str::from_utf8(&info).unwrap();
-            info_headers.push(&info_str);
+            info_headers.push(info_str.to_string());
         }
         utils::get_output_header(info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "doesnotexist".to_string()]));
     }
