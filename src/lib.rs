@@ -18,7 +18,7 @@ pub mod utils;
 pub mod error;
 
 #[derive(Parser)]
-#[command(version = "0.2.2", about = "Read a (normalised) .vcf[.gz] and output tsv/json. CSQ-aware.", long_about = None)]
+#[command(version = "0.2.3", about = "Read a (normalised) .vcf[.gz] and output tsv/json. CSQ-aware.", long_about = None)]
 #[command(styles=get_styles())]
 pub struct Args {
     /// input .vcf[.gz] file, or ignore to read from stdin
