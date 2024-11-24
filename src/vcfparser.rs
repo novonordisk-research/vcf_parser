@@ -10,14 +10,10 @@ use crate::utils;
 pub struct VcfParser {
     /// filter to use for filtering variants
     pub filters: serde_json::Value,
-    /// fields to parse, such as CSQ,VEP
-    fields: Vec<String>,
     /// info fields have `info.` prefix, such as info.CSQ, info.VEP
     pub info_fields: Vec<String>,
     /// fields to join on, such as Feature,Transcript_id. Version numbers will be ignored.
     pub fields_join: Vec<String>,
-    /// columns to output
-    columns: Option<Vec<String>>,
     /// output format, tsv, json, vcf(coming soon)
     pub output_format: OutputFormat,
     /// reader to read from
@@ -25,7 +21,6 @@ pub struct VcfParser {
     /// vcf header
     pub header: Arc<vcf::VCFHeader>,
     /// info headers
-    info_headers: Arc<Vec<String>>,
     /// CSQ headers
     pub csq_headers: Arc<HashMap<String, Vec<String>>>,
     /// tsv headers
@@ -62,13 +57,10 @@ impl VcfParser{
         let tsv_headers = utils::get_output_header(&info_headers, &csq_headers, &columns);
         Ok(VcfParser {
             filters,
-            fields,
             info_fields,
             fields_join,
-            columns,
             output_format,
             reader,
-            info_headers,
             csq_headers,
             tsv_headers,
             header,
