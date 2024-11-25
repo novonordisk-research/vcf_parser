@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use vcfparser::VcfParser;
 use std::{fs::File, error::Error, str, path::Path};
 use std::io::{self, BufRead, BufReader};
-use vcf::VCFRecord;
+pub use vcf::VCFRecord;
 use crate::variant::Variant;
 use serde_json::{Map, Value};
 use serde::Serialize;
