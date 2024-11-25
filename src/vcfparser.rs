@@ -7,7 +7,9 @@ use vcf::VCFReader;
 use std::sync::Arc;
 use serde_json;
 use crate::utils;
-pub struct VcfParser {
+pub struct VcfParser<T>
+where T: BufRead + Send + Sync,
+{
     /// filter to use for filtering variants
     pub filters: serde_json::Value,
     /// info fields have `info.` prefix, such as info.CSQ, info.VEP
@@ -17,7 +19,7 @@ pub struct VcfParser {
     /// output format, tsv, json, vcf(coming soon)
     pub output_format: OutputFormat,
     /// reader to read from
-    pub reader: VCFReader<Box<dyn BufRead + Send + Sync>>,
+    pub reader: VCFReader<T>,
     /// vcf header
     pub header: Arc<vcf::VCFHeader>,
     /// info headers
@@ -26,14 +28,16 @@ pub struct VcfParser {
     /// tsv headers
     pub tsv_headers: Vec<String>,
 }
-impl VcfParser{
+impl <T> VcfParser <T>
+where T: BufRead + Send + Sync,
+{
     pub fn new(
         filters: serde_json::Value,
         fields: Vec<String>,
         fields_join: Vec<String>,
         columns: Option<Vec<String>>,
         output_format: OutputFormat,
-        reader: Box<dyn BufRead + Send + Sync>,
+        reader: T,
     ) -> Result<Self> {
         if fields.len() >1 && fields.len() != fields_join.len() {
             return Err(VcfParserError::InvalidArgument("Number of fields should be equal to the number of fields_join".into()).into());
