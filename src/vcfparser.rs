@@ -22,7 +22,6 @@ where T: BufRead + Send + Sync,
     pub reader: VCFReader<T>,
     /// vcf header
     pub header: Arc<vcf::VCFHeader>,
-    /// info headers
     /// CSQ headers
     pub csq_headers: Arc<HashMap<String, Vec<String>>>,
     /// tsv headers
@@ -58,7 +57,7 @@ where T: BufRead + Send + Sync,
         }
         let info_headers = Arc::new(info_headers);
         let csq_headers = Arc::new(csq_headers);
-        let tsv_headers = utils::get_output_header(&info_headers, &csq_headers, &columns);
+        let tsv_headers = utils::get_output_header(&info_headers, &csq_headers, header.samples(), &columns);
         Ok(VcfParser {
             filters,
             info_fields,

@@ -258,7 +258,7 @@ pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
     }).collect::<Vec<String>>()
 }
 
-pub fn get_output_header<'a>(info_header: &Vec<String>, csq_header: &HashMap<String, Vec<String>>, user_columns: &Option<Vec<String>>) -> Vec<String> {
+pub fn get_output_header<'a>(info_header: &Vec<String>, csq_header: &HashMap<String, Vec<String>>, samples: &[Vec<u8>], user_columns: &Option<Vec<String>>) -> Vec<String> {
     // get the header for csv output
     // essential columns are in the front. All info columns are in the back, sorted alphabetically.
     let mut header: Vec<String> = Vec::new();
@@ -273,8 +273,23 @@ pub fn get_output_header<'a>(info_header: &Vec<String>, csq_header: &HashMap<Str
     }
     // sort header
     header.sort();
+
+    // turn samples into strings
+    let samples = samples.iter().map(|x| std::str::from_utf8(x).unwrap().to_string()).collect::<Vec<String>>();
+
     // add chromosome, position, id, ref, alt, qual, filter
-    let header = vec!["chromosome".to_string(), "position".to_string(), "id".to_string(), "reference".to_string(), "alternative".to_string(), "qual".to_string(), "filter".to_string(), ].iter().chain(header.iter()).map(|x| x.to_string()).collect::<Vec<String>>();
+    let header = vec![
+        "chromosome".to_string(),
+        "position".to_string(),
+        "id".to_string(),
+        "reference".to_string(),
+        "alternative".to_string(),
+        "qual".to_string(),
+        "filter".to_string(),
+    ].iter()
+    .chain(header.iter())
+    .chain(samples.iter())
+    .map(|x| x.to_string()).collect::<Vec<String>>();
 
     // if user_columns is None, then all columns are selected
     // validate if user_columns are a subset of header

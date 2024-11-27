@@ -250,11 +250,11 @@ mod tests {
             let info_str = str::from_utf8(&info)?;
             info_headers.push(info_str.to_string());
         }
-        let header = utils::get_output_header(&info_headers, &csq_headers, &None);
+        let header = utils::get_output_header(&info_headers, &csq_headers, reader.header().samples(), &None);
         let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who"];
         assert_eq!(header, expected);
 
-        let header = utils::get_output_header(&info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "reference".to_string()]));
+        let header = utils::get_output_header(&info_headers, &csq_headers, reader.header().samples(), &Some(vec!["info.CSQ.Consequence".to_string(), "reference".to_string()]));
         let expected = vec!["info.CSQ.Consequence", "reference"];
         assert_eq!(header, expected);
 
@@ -269,7 +269,7 @@ mod tests {
             let info_str = str::from_utf8(&info).unwrap();
             info_headers.push(info_str.to_string());
         }
-        utils::get_output_header(&info_headers, &csq_headers, &Some(vec!["info.CSQ.Consequence".to_string(), "doesnotexist".to_string()]));
+        utils::get_output_header(&info_headers, &csq_headers, reader.header().samples(), &Some(vec!["info.CSQ.Consequence".to_string(), "doesnotexist".to_string()]));
     }
     #[test]
     fn test_explode_data() -> Result<(), Box<dyn Error>> {
@@ -292,12 +292,8 @@ mod tests {
         let mut results: Vec<Map<String,Value>> = Vec::new();
         while reader.next_record(&mut vcf_record).unwrap() {
             let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
-            //let val = serde_json::to_value(&variant)?;
-            //println!("{:?}", serde_json::to_string(&variant)?);
             let explodeds = fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
             let joined = utils::outer_join(explodeds, &fields_join)?;
-            //println!("====================");
-            //println!("{}", serde_json::to_string_pretty(&joined)?);
             let filtered_record: Vec<Map<String, Value>> = joined.into_iter().filter(|x| utils::filter_record(x, &filter)).collect();
             results.extend(filtered_record.into_iter());
         }
