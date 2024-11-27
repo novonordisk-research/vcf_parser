@@ -100,7 +100,7 @@ pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
         joined.iter().filter(|x| utils::filter_record(x, &vcf_parser.filters)).for_each(|x| {
             match vcf_parser.output_format {
                 OutputFormat::T => {
-                    let row = utils::get_row(x.clone(), &tsv_header);
+                    let row = utils::get_row(&x, &tsv_header);
                     utils::print_line_to_stdout(&row.join("\t")).unwrap();
                 },
                 OutputFormat::J => {

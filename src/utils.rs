@@ -245,7 +245,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
     result
 }
 
-pub fn get_row(data:Map<String, Value>, header:&Vec<String>) -> Vec<String> {
+pub fn get_row(data:&Map<String, Value>, header:&Vec<String>) -> Vec<String> {
     // given a data and a header, return a row
     // for tsv output
     header.iter().map(|x| {
