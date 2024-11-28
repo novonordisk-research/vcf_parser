@@ -18,7 +18,7 @@ pub struct Variant {
     pub filter: String,
     #[serde(flatten, with="prefix_info")]
     pub info: Map<String, Value>,
-    pub genotype: Option<Map<String, Value>>,
+    pub genotype: Map<String, Value>,
 }
 
 impl Variant {
@@ -186,7 +186,7 @@ impl Variant {
             reference: str::from_utf8(&vcf_record.reference).unwrap().to_string(),
             qual: vcf_record.qual,
             info,
-            genotype: if genotype.is_empty() { None } else {Some(genotype)},
+            genotype: genotype,
         }
     }
 }
