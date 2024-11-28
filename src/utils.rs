@@ -247,9 +247,10 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
 
 pub fn get_row(data:&Map<String, Value>, header:&Vec<String>) -> Vec<String> {
     // given a data and a header, return a row
+    // if genotype exists, extract sample genotype
     // for tsv output
     header.iter().map(|x| {
-        match data.get(x).unwrap_or(&Value::Null) {
+        match data.get(x).unwrap_or(data.get("genotype").unwrap().get(x).unwrap_or(&Value::Null)) {
             Value::Null => "".to_string(),
             Value::Number(n) => n.to_string(),
             Value::String(s) => s.as_str().to_string(),
@@ -258,7 +259,7 @@ pub fn get_row(data:&Map<String, Value>, header:&Vec<String>) -> Vec<String> {
     }).collect::<Vec<String>>()
 }
 
-pub fn get_output_header<'a>(info_header: &Vec<String>, csq_header: &HashMap<String, Vec<String>>, samples: &[Vec<u8>], user_columns: &Option<Vec<String>>) -> Vec<String> {
+pub fn get_output_header(info_header: &Vec<String>, csq_header: &HashMap<String, Vec<String>>, samples: &[Vec<u8>], user_columns: &Option<Vec<String>>) -> Vec<String> {
     // get the header for csv output
     // essential columns are in the front. All info columns are in the back, sorted alphabetically.
     let mut header: Vec<String> = Vec::new();
