@@ -203,11 +203,12 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use vcf::VCFReader;
-    pub fn prepare_test(fields:&Vec<String>)-> Result<(VCFReader<Box<dyn BufRead + Send + Sync>>, HashMap<String, Vec<String>>, Value), Box<dyn Error>> {
+    pub fn prepare_test(vcf_file: Option<&str>, fields:&Vec<String>)-> Result<(VCFReader<Box<dyn BufRead + Send + Sync>>, HashMap<String, Vec<String>>, Value), Box<dyn Error>> {
         let filter_file = File::open("test/filter.yml")?;
         let filter = serde_yaml::from_reader(filter_file)?;
+        let vcf_file = vcf_file.unwrap_or("test/test.vcf");
         let reader: Box<dyn BufRead + Send + Sync> = 
-            Box::new(BufReader::new(File::open("test/test.vcf")?));
+            Box::new(BufReader::new(File::open(vcf_file)?));
     
         let reader = VCFReader::new(reader)?;
         // get info and vep headers
@@ -228,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_variants() -> Result<(), Box<dyn Error>> {
-        let (mut reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
+        let (mut reader, csq_headers, _filter) = prepare_test(None, &vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut vcf_record = reader.empty_record();
         let mut variants: Vec<Variant> = Vec::new();
         
@@ -244,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_get_output_header() -> Result<(), Box<dyn Error>> {
-        let (reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
+        let (reader, csq_headers, _filter) = prepare_test(None, &vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut info_headers: Vec<String> = Vec::new();
         for info in reader.header().info_list() {
             let info_str = str::from_utf8(&info)?;
@@ -261,9 +262,27 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn test_get_output_header_with_samples() -> Result<(), Box<dyn Error>> {
+        let (reader, csq_headers, _filter) = prepare_test(Some("test/test_samples.vcf"), &vec!["CSQ".to_string(), "Pangolin".to_string()])?;
+        let mut info_headers: Vec<String> = Vec::new();
+        for info in reader.header().info_list() {
+            let info_str = str::from_utf8(&info)?;
+            info_headers.push(info_str.to_string());
+        }
+        let header = utils::get_output_header(&info_headers, &csq_headers, reader.header().samples(), &None);
+        let expected = vec!["chromosome", "position", "id", "reference", "alternative", "qual", "filter", "info.AC", "info.AF", "info.CADD_PHRED", "info.CADD_RAW", "info.CSQ.Allele", "info.CSQ.CANONICAL", "info.CSQ.Consequence", "info.CSQ.Feature", "info.CSQ.Feature_type", "info.CSQ.Gene", "info.CSQ.IMPACT", "info.CSQ.SYMBOL", "info.Pangolin.pangolin_gene", "info.Pangolin.pangolin_max_score", "info.Pangolin.pangolin_transcript", "info.tag", "info.what", "info.who", "S1", "S2"];
+        assert_eq!(header, expected);
+
+        let header = utils::get_output_header(&info_headers, &csq_headers, reader.header().samples(), &Some(vec!["info.CSQ.Consequence".to_string(), "reference".to_string()]));
+        let expected = vec!["info.CSQ.Consequence", "reference"];
+        assert_eq!(header, expected);
+
+        Ok(())
+    }
+    #[test]
     #[should_panic]
     fn test_get_output_header_panic() {
-        let (reader, csq_headers, _filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()]).unwrap();
+        let (reader, csq_headers, _filter) = prepare_test(None, &vec!["CSQ".to_string(), "Pangolin".to_string()]).unwrap();
         let mut info_headers: Vec<String> = Vec::new();
         for info in reader.header().info_list() {
             let info_str = str::from_utf8(&info).unwrap();
@@ -285,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_filter() -> Result<(), Box<dyn Error>> {
-        let (mut reader, csq_headers, filter) = prepare_test(&vec!["CSQ".to_string(), "Pangolin".to_string()])?;
+        let (mut reader, csq_headers, filter) = prepare_test(None, &vec!["CSQ".to_string(), "Pangolin".to_string()])?;
         let mut vcf_record = reader.empty_record();
         let fields = vec!["info.CSQ".to_string(), "info.Pangolin".to_string()];
         let fields_join = vec!["info.CSQ.Feature".to_string(), "info.Pangolin.pangolin_transcript".to_string()];
