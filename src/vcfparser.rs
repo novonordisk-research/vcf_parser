@@ -46,7 +46,7 @@ where T: BufRead + Send + Sync,
         let mut info_headers: Vec<String> = Vec::new();
         let mut csq_headers: HashMap<String, Vec<String>> = HashMap::new();
         let reader = VCFReader::new(reader)?;
-        let header = Arc::new(reader.header().clone());
+        let header = Arc::new(reader.header().to_owned());
         for info in header.info_list() {
             let info_str = str::from_utf8(&info)?;
             info_headers.push(info_str.to_string());
@@ -58,6 +58,12 @@ where T: BufRead + Send + Sync,
         let info_headers = Arc::new(info_headers);
         let csq_headers = Arc::new(csq_headers);
         let tsv_headers = utils::get_output_header(&info_headers, &csq_headers, header.samples(), &columns);
+        // check if fields_join is a subset of tsv_headers
+        for field in &fields_join {
+            if !tsv_headers.contains(field) {
+                return Err(VcfParserError::InvalidArgument(format!("Field {} not found in the header", field)).into());
+            }
+        }
         Ok(VcfParser {
             filters,
             info_fields,

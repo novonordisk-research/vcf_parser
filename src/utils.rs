@@ -2,6 +2,7 @@ use std::error::Error;
 use std::collections::HashMap;
 use calm_io::stdoutln;
 use serde_json::{Map, Value, Number};
+use std::rc::Rc;
 
 pub fn print_line_to_stdout(line: &str) -> Result<(), Box<dyn Error>> {
     // output line to stdout.
@@ -159,25 +160,25 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
     }
     // Create a map to hold the result of the outer join
     // right_table would be the joint table
-    let mut keys = keys.iter().map(|x| x.to_string()).collect::<Vec<String>>();
+    let mut keys = keys.clone();
     let mut right_table: Vec<Map<String, Value>> = tables.pop().unwrap();
     let right_key = keys.pop().unwrap();
     while let Some(mut left_table) = tables.pop() {
         // get all keys from the left table
-        let left_firstrow = left_table[0].clone();
-        let left_keys = left_firstrow.keys().collect::<Vec<&String>>();
-        let right_firstrow = right_table[0].clone();
-        let right_keys = right_firstrow.keys().collect::<Vec<&String>>();
+        let left_firstrow = left_table[0].to_owned();
+        let left_keys = Rc::new(left_firstrow.keys().collect::<Vec<&String>>());
+        let right_firstrow = right_table[0].to_owned();
+        let right_keys = Rc::new(right_firstrow.keys().collect::<Vec<&String>>());
         let left_key = keys.pop().unwrap();
         // Iterate over each entry in the right table, and remove  entries in the left table that are joined
         right_table.iter_mut().for_each(|right_entry| {
-            let right_value = match right_entry.get(&right_key).unwrap_or(&Value::Null){
+            let right_value = match right_entry.get(&right_key).unwrap(){
                 Value::Null => "__MISSING__",
                 x => x.as_str().unwrap(),
             }.split(".").collect::<Vec<&str>>();
             // fight the matching left entry, and delete the left entry from the left table
             if let Some(left_index) = left_table.iter().position(|left_entry| {
-                let left_value = match left_entry.get(&left_key).unwrap_or(&Value::Null){
+                let left_value = match left_entry.get(&left_key).unwrap(){
                     Value::Null => "__MISSING__",
                     x => x.as_str().unwrap(),
                 }.split(".").collect::<Vec<&str>>();
@@ -192,7 +193,7 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
                 }
             } else {
                 // fill in null to all the keys in the left table that are not in the right table
-                for k in left_keys.clone() {
+                for &k in left_keys.iter() {
                     if right_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
                         right_entry.insert(k.to_string(), Value::Null);
                     }
@@ -202,7 +203,7 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
         // add the left table (whatever left) to the right table. fill missing right keys with null
         for left_entry in left_table {
             let mut new_entry = left_entry;
-            for k in right_keys.clone() {
+            for &k in right_keys.iter() {
                 if new_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
                     new_entry.insert(k.to_string(), Value::Null);
                 }
@@ -220,7 +221,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
     match data.get(key).unwrap_or(&Value::Null) {
         Value::Array(arr) => {
             for a in arr {
-                let mut new_record = data.as_object().unwrap().clone();
+                let mut new_record = data.as_object().unwrap().to_owned();
                 for drop in drops {
                     new_record.remove(drop);
                 }
@@ -228,7 +229,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
                     Value::Object(map) => {
                         for (k, v) in map {
                             let k = format!("{}.{}", key, k);
-                            new_record.insert(k, v.clone());
+                            new_record.insert(k, v.to_owned());
                         }
                         result.push(new_record);
                     },
