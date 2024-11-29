@@ -58,6 +58,12 @@ where T: BufRead + Send + Sync,
         let info_headers = Arc::new(info_headers);
         let csq_headers = Arc::new(csq_headers);
         let tsv_headers = utils::get_output_header(&info_headers, &csq_headers, header.samples(), &columns);
+        // check if fields_join is a subset of tsv_headers
+        for field in &fields_join {
+            if !tsv_headers.contains(field) {
+                return Err(VcfParserError::InvalidArgument(format!("Field {} not found in the header", field)).into());
+            }
+        }
         Ok(VcfParser {
             filters,
             info_fields,

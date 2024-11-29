@@ -160,7 +160,7 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
     }
     // Create a map to hold the result of the outer join
     // right_table would be the joint table
-    let mut keys = keys.iter().map(|x| x.to_string()).collect::<Vec<String>>();
+    let mut keys = keys.clone();
     let mut right_table: Vec<Map<String, Value>> = tables.pop().unwrap();
     let right_key = keys.pop().unwrap();
     while let Some(mut left_table) = tables.pop() {
@@ -172,13 +172,13 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
         let left_key = keys.pop().unwrap();
         // Iterate over each entry in the right table, and remove  entries in the left table that are joined
         right_table.iter_mut().for_each(|right_entry| {
-            let right_value = match right_entry.get(&right_key).unwrap_or(&Value::Null){
+            let right_value = match right_entry.get(&right_key).unwrap(){
                 Value::Null => "__MISSING__",
                 x => x.as_str().unwrap(),
             }.split(".").collect::<Vec<&str>>();
             // fight the matching left entry, and delete the left entry from the left table
             if let Some(left_index) = left_table.iter().position(|left_entry| {
-                let left_value = match left_entry.get(&left_key).unwrap_or(&Value::Null){
+                let left_value = match left_entry.get(&left_key).unwrap(){
                     Value::Null => "__MISSING__",
                     x => x.as_str().unwrap(),
                 }.split(".").collect::<Vec<&str>>();
