@@ -229,7 +229,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
                     Value::Object(map) => {
                         for (k, v) in map {
                             let k = format!("{}.{}", key, k);
-                            new_record.insert(k, v.clone());
+                            new_record.insert(k, v.to_owned());
                         }
                         result.push(new_record);
                     },
