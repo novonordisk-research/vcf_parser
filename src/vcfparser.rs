@@ -46,7 +46,7 @@ where T: BufRead + Send + Sync,
         let mut info_headers: Vec<String> = Vec::new();
         let mut csq_headers: HashMap<String, Vec<String>> = HashMap::new();
         let reader = VCFReader::new(reader)?;
-        let header = Arc::new(reader.header().clone());
+        let header = Arc::new(reader.header().to_owned());
         for info in header.info_list() {
             let info_str = str::from_utf8(&info)?;
             info_headers.push(info_str.to_string());

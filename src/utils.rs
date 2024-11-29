@@ -165,9 +165,9 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
     let right_key = keys.pop().unwrap();
     while let Some(mut left_table) = tables.pop() {
         // get all keys from the left table
-        let left_firstrow = left_table[0].clone();
+        let left_firstrow = left_table[0].to_owned();
         let left_keys = Rc::new(left_firstrow.keys().collect::<Vec<&String>>());
-        let right_firstrow = right_table[0].clone();
+        let right_firstrow = right_table[0].to_owned();
         let right_keys = Rc::new(right_firstrow.keys().collect::<Vec<&String>>());
         let left_key = keys.pop().unwrap();
         // Iterate over each entry in the right table, and remove  entries in the left table that are joined

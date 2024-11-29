@@ -81,7 +81,7 @@ impl Variant {
                                             ))
                                         }
                                     })
-                                    .collect::<Vec<Value>>()[0].clone(),
+                                    .collect::<Vec<Value>>()[0].to_owned(),
                             )
                         } else {
                             if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
@@ -103,7 +103,7 @@ impl Variant {
                                             ))
                                         }
                                     })
-                                    .collect::<Vec<Value>>()[0].clone(),
+                                    .collect::<Vec<Value>>()[0].to_owned(),
                             )
                         } else {
                             if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
