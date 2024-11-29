@@ -2,6 +2,7 @@ use std::error::Error;
 use std::collections::HashMap;
 use calm_io::stdoutln;
 use serde_json::{Map, Value, Number};
+use std::rc::Rc;
 
 pub fn print_line_to_stdout(line: &str) -> Result<(), Box<dyn Error>> {
     // output line to stdout.
@@ -165,9 +166,9 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
     while let Some(mut left_table) = tables.pop() {
         // get all keys from the left table
         let left_firstrow = left_table[0].clone();
-        let left_keys = left_firstrow.keys().collect::<Vec<&String>>();
+        let left_keys = Rc::new(left_firstrow.keys().collect::<Vec<&String>>());
         let right_firstrow = right_table[0].clone();
-        let right_keys = right_firstrow.keys().collect::<Vec<&String>>();
+        let right_keys = Rc::new(right_firstrow.keys().collect::<Vec<&String>>());
         let left_key = keys.pop().unwrap();
         // Iterate over each entry in the right table, and remove  entries in the left table that are joined
         right_table.iter_mut().for_each(|right_entry| {
@@ -192,7 +193,7 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
                 }
             } else {
                 // fill in null to all the keys in the left table that are not in the right table
-                for k in left_keys.clone() {
+                for &k in left_keys.iter() {
                     if right_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
                         right_entry.insert(k.to_string(), Value::Null);
                     }
@@ -202,7 +203,7 @@ pub fn outer_join(mut tables: Vec<Vec<Map<String, Value>>>, keys: &Vec<String>) 
         // add the left table (whatever left) to the right table. fill missing right keys with null
         for left_entry in left_table {
             let mut new_entry = left_entry;
-            for k in right_keys.clone() {
+            for &k in right_keys.iter() {
                 if new_entry.get(k).unwrap_or(&Value::Null) == &Value::Null {
                     new_entry.insert(k.to_string(), Value::Null);
                 }
