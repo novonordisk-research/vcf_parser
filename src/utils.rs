@@ -221,7 +221,7 @@ pub fn explode_data(data:Value, key: &str, drops: &Vec<String>) -> Vec<Map<Strin
     match data.get(key).unwrap_or(&Value::Null) {
         Value::Array(arr) => {
             for a in arr {
-                let mut new_record = data.as_object().unwrap().clone();
+                let mut new_record = data.as_object().unwrap().to_owned();
                 for drop in drops {
                     new_record.remove(drop);
                 }
