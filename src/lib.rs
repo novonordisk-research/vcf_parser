@@ -16,6 +16,7 @@ pub mod vcfparser;
 pub mod variant;
 pub mod utils;
 pub mod error;
+pub mod parser;
 
 #[derive(Parser)]
 #[command(version = "0.2.4", about = "Read a (normalised) .vcf[.gz] and output tsv/json. CSQ-aware.", long_about = None)]
@@ -375,6 +376,18 @@ mod tests {
             serde_json::from_str(r#"{"key1": "value3", "key11": null, "key2": "value4"}"#).unwrap(),
         ];
         assert_eq!(joined_table, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_logic() -> Result<(), Box<dyn Error>> {
+        let input = r#"foo = "bar" AND baz > 10"#;
+
+        let result = parser::parse_logic_expr(input);
+        match result {
+            Ok(res) => println!("{}", res),
+            Err(e) => println!("Logic Error: {:?}", e),
+        }
         Ok(())
     }
 }
