@@ -16,6 +16,7 @@ pub mod vcfparser;
 pub mod variant;
 pub mod utils;
 pub mod error;
+pub mod parser;
 
 #[derive(Parser)]
 #[command(version = "0.2.4", about = "Read a (normalised) .vcf[.gz] and output tsv/json. CSQ-aware.", long_about = None)]
@@ -29,7 +30,7 @@ pub struct Args {
     #[arg(short, long, default_value_t = 0)]
     threads: usize,
 
-    /// filter yaml file to use
+    /// filter expression (experimental) or yaml file to use
     #[arg(short, long)]
     filter: Option<String>,
 
@@ -58,9 +59,15 @@ pub struct Args {
 
 pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
     // read filter if given
-    let filters: serde_json::Value = if let Some(file_name) = args.filter  {
-        let filter_file = File::open(file_name)?;
-        serde_yaml::from_reader(filter_file)?
+    // if space is present, treat it as a logic expression
+    // otherwise, treat it as a file
+    let filters: serde_json::Value = if let Some(filter_string) = args.filter  {
+        if filter_string.contains(" ") {
+            parser::parse_logic_expr(&filter_string).map_err(|e| error::VcfParserError::InvalidFilter(e.to_string()))?
+        } else {
+            let filter_file = File::open(filter_string)?;
+            serde_yaml::from_reader(filter_file)?
+        }
     } else {
         serde_json::Value::Null
     };
@@ -375,6 +382,20 @@ mod tests {
             serde_json::from_str(r#"{"key1": "value3", "key11": null, "key2": "value4"}"#).unwrap(),
         ];
         assert_eq!(joined_table, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_logic() -> Result<(), Box<dyn Error>> {
+
+        let exprs = [
+            (r#"foo = bar AND baz > 10"#, r#"{"AND":[{"name":"foo","op":"=","value":"bar"},{"name":"baz","op":">","value":10.0}]}"#),
+            (r#"(foo == bar or baz > 10) AND baz <= 5"#, r#"{"AND":[{"OR":[{"name":"foo","op":"==","value":"bar"},{"name":"baz","op":">","value":10.0}]},{"name":"baz","op":"<=","value":5.0}]}"#),
+        ];
+        for (expr, expected) in exprs.iter() {
+            let result = parser::parse_logic_expr(expr)?;
+            assert_eq!(result, serde_json::from_str::<serde_json::Value>(expected)?);
+        }
         Ok(())
     }
 }

@@ -11,6 +11,7 @@ anyhow = "1.0.93"
 calm_io = "0.1.1"
 clap = { version = "4.5.1", features = ["derive"] }
 flate2 = "1.0.28"
+pom = "3.4.0"
 rayon = "1.9.0"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
