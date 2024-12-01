@@ -22,20 +22,23 @@ fn ident<'a>() -> Parser<'a, u8, String> {
 
 // Define the parser for operators
 fn operator<'a>() -> Parser<'a, u8, String> {
-    (seq(b"=") 
-    | seq(b"<") 
-    | seq(b">") 
+    (seq(b"==") 
     | seq(b"is") 
-    | seq(b"==") 
+    | seq(b"=") 
     | seq(b"<=") 
     | seq(b">=")
     | seq(b"!=")
+    | seq(b"<") 
+    | seq(b">")
     | seq(b"eq")
     | seq(b"ne")
     | seq(b"gt")
     | seq(b"ge")
     | seq(b"lt")
     | seq(b"le")
+    | seq(b"in")
+    | seq("≥".as_bytes())
+    | seq("≤".as_bytes())
 ).convert(|arg0: &[u8]| String::from_utf8(arg0.to_vec()))
 }
 
@@ -138,7 +141,7 @@ fn boolean_condition<'a>() -> Parser<'a, u8, Value> {
 }
 
 fn boolean_expression<'a>() -> Parser<'a, u8, Value> {
-    (boolean_condition() + (and_or()) + call(boolean_expression)).map(
+    (boolean_condition() + and_or() + call(boolean_expression)).map(
         |((boolean_condition, and_or_initial), boolean_expression)| json!({
             and_or_initial: [boolean_condition, boolean_expression]
         })
@@ -147,5 +150,6 @@ fn boolean_expression<'a>() -> Parser<'a, u8, Value> {
 
 // Define the main parser function
 pub fn parse_logic_expr<'a>(input: &str) -> Result<Value, pom::Error> {
+    //(space() * boolean_expression() - end()).parse(input.as_bytes())
     (space() * boolean_expression() - end()).parse(input.as_bytes())
 }
