@@ -1,5 +1,4 @@
 use pom::parser::*;
-use pom::char_class::*;
 use std::str::{self, FromStr};
 use serde_json::{Value, json};
 
@@ -113,13 +112,6 @@ fn or<'a>() -> Parser<'a, u8, u8> {
 
 fn and_or<'a>() -> Parser<'a, u8, String> {
     and().map(|_| "AND".into()) | or().map(|_| "OR".into())
-}
-
-// Define the parser for values (numbers, strings, or null)
-fn _value<'a>() -> Parser<'a, u8, Value> {
-    is_a(digit).repeat(1..).convert(String::from_utf8).convert(|arg0: std::string::String| f64::from_str(&arg0)).map(Value::from)
-        | sym(b'"') * none_of(b"\"").repeat(1..).convert(String::from_utf8).map(Value::from) - sym(b'"')
-        | seq(b"null").map(|_| Value::Null)
 }
 
 fn property_val<'a>() -> Parser<'a, u8, Value> {
