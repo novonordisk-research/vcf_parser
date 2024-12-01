@@ -116,7 +116,7 @@ fn and_or<'a>() -> Parser<'a, u8, String> {
 
 fn property_val<'a>() -> Parser<'a, u8, Value> {
     space()
-        * ((lparen() * list(value(), sym(b',') * space()) - rparen())
+        * ((lparen() * list(value(), sym(b',').opt() * space()) - rparen())
             .map(|g| json!(g))
             | value())
         - space()

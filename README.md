@@ -39,10 +39,13 @@ vcf_parser -i test/test.vcf --fields CSQ,Pangolin --fields-join Feature,pangolin
 An example of `filter.yml` can be found in the `test/` folder. You can replace `eq` with `=` or `==`, `le` with `<=` or `≤`, etc.
 Equivalently, you can now pass a logic expression as a string to the `-f` option. For example:
 ```bash
-vcf_parser -i test/test.vcf -f "(info.AF <= 0.01 AND info.CSQ.IMPACT in (HIGH,MODERATE)) AND (info.CADD_PHRED >=20 OR info.Pangolin.pangolin_max_score >= 0.5 or info.Pangolin.pangolin_max_score <= -0.5)" --fields CSQ,Pangolin --fields-join Feature,pangolin_transcript
+vcf_parser -i test/test.vcf -f "(info.AF <= 0.01 AND info.CSQ.IMPACT in (HIGH, MODERATE)) AND (info.CADD_PHRED >=20 OR info.Pangolin.pangolin_max_score >= 0.5 or info.Pangolin.pangolin_max_score <= -0.5)" --fields CSQ,Pangolin --fields-join Feature,pangolin_transcript
 ```
 **NOTE**: As in the current implementation, "AND" and "OR" have the same precedence. Please use parentheses to make the logic expression unambiguous.
-
+If you have a list of genes to filter stored in a file, you can do it so:
+```bash
+vcf_parser -i test/test.vcf -f "info.CSQ.Gene in (`cat genes.txt`)" --fields CSQ,Pangolin --fields-join Feature,pangolin_transcript
+```
 ### Options
 ```
 -h #help 
