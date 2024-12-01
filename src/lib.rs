@@ -63,7 +63,7 @@ pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
     // otherwise, treat it as a file
     let filters: serde_json::Value = if let Some(filter_string) = args.filter  {
         if filter_string.contains(" ") {
-            parser::parse_logic_expr(&filter_string)?
+            parser::parse_logic_expr(&filter_string).map_err(|e| error::VcfParserError::InvalidFilter(e.to_string()))?
         } else {
             let filter_file = File::open(filter_string)?;
             serde_yaml::from_reader(filter_file)?

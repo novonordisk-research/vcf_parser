@@ -8,4 +8,6 @@ pub enum VcfParserError {
     Parse(#[from] vcf::VCFError),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
+    #[error("Invalid filter expression: {0}")]
+    InvalidFilter(String),
 }
