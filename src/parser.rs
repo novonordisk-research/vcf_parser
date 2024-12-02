@@ -177,7 +177,6 @@ mod tests {
         ];
         for (expr, expected) in exprs.iter() {
             let result = parse_logic_expr(expr)?;
-            println!("{:?}", expr);
             assert_eq!(result, serde_json::from_str::<serde_json::Value>(expected).unwrap());
         }
         Ok(())

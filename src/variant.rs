@@ -77,7 +77,7 @@ impl Variant {
                                             Value::Null
                                         } else {
                                             Value::from(Number::from(
-                                                str::from_utf8(x).unwrap().parse::<i64>().unwrap(),
+                                                str::from_utf8(x).unwrap().parse::<i64>().expect(&format!("parse error {}, {}", field_str, str::from_utf8(x).unwrap())),
                                             ))
                                         }
                                     })
