@@ -82,7 +82,7 @@ pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
     // if --list, print the headers and quit
     if args.list {
         let header = vcf_parser.tsv_headers;
-        utils::print_line_to_stdout(&header.join("\n"))?;
+        utils::print_line_to_stdout(&header.join("\n")).unwrap();
         return Ok(());
     }
     // write tsv header to stdout
@@ -101,7 +101,7 @@ pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
         }
         let line = line.as_bytes() as &[u8];
         let vcf_record = VCFRecord::from_bytes(line, 1, (*vcf_parser.header).clone()).unwrap();
-        let variant = Variant::new(&vcf_record, vcf_parser.header.samples(), &vcf_parser.csq_headers);
+        let variant = Variant::new(&vcf_record, vcf_parser.header.samples(), &vcf_parser.csq_headers).unwrap();
         let explodeds = vcf_parser.info_fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &vcf_parser.info_fields)).collect::<Vec<Vec<Map<String, Value>>>>();
         let joined = utils::outer_join(explodeds, &vcf_parser.fields_join).unwrap();
         joined.iter().filter(|x| utils::filter_record(x, &vcf_parser.filters)).for_each(|x| {
@@ -242,7 +242,7 @@ mod tests {
         
         while reader.next_record(&mut vcf_record).unwrap() {
             let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
-            variants.push(variant);
+            variants.push(variant?);
             
         }
         assert!(variants.len() == 5);
@@ -317,7 +317,7 @@ mod tests {
         let fields_join = vec!["info.CSQ.Feature".to_string(), "info.Pangolin.pangolin_transcript".to_string()];
         let mut results: Vec<Map<String,Value>> = Vec::new();
         while reader.next_record(&mut vcf_record).unwrap() {
-            let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers);
+            let variant = Variant::new(&vcf_record, reader.header().samples(), &csq_headers)?;
             let explodeds = fields.iter().map(|x| utils::explode_data(serde_json::to_value(&variant).unwrap(), x, &fields)).collect::<Vec<Vec<Map<String, Value>>>>();
             let joined = utils::outer_join(explodeds, &fields_join)?;
             let filtered_record: Vec<Map<String, Value>> = joined.into_iter().filter(|x| utils::filter_record(x, &filter)).collect();

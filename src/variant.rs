@@ -4,6 +4,8 @@ use vcf::VCFRecord;
 use std::collections::HashMap;
 use std::str;
 use crate::utils;
+use crate::error::VcfParserError;
+use crate::Result;
 
 serde_with::with_prefix!(prefix_info "info.");
 
@@ -26,41 +28,41 @@ impl Variant {
         vcf_record: &VCFRecord,
         samples: &[Vec<u8>],
         csq_headers: &HashMap<String, Vec<String>>,
-    ) -> Self {
+    ) -> Result<Self> {
         // parse genotype
         let mut genotype = Map::new();
         for sample in samples {
             let mut sample_genotype = Map::new();
             for key in &vcf_record.format {
                 let genotype_raw = vcf_record.genotype(&sample, &key);
-                let f_k = str::from_utf8(key).unwrap();
-                let val = str::from_utf8(&genotype_raw.unwrap()[0]).unwrap();
-                match vcf_record.header().format(key).unwrap().value_type {
+                let f_k = str::from_utf8(key)?;
+                let val = str::from_utf8(&genotype_raw.ok_or(VcfParserError::VariantParseError("genotype parse error"))?[0])?;
+                match vcf_record.header().format(key).ok_or(VcfParserError::VariantParseError("cannot find header"))?.value_type {
                     vcf::ValueType::Integer => sample_genotype.insert(
                         f_k.to_string(),
                         if val == "." {
                             Value::Null
                         } else {
-                            Value::Number(Number::from(val.parse::<i64>().unwrap_or_else( |_| panic!("parse error {f_k}, {val}"))))
+                            Value::Number(Number::from(val.parse::<i64>()?))
                         },
                     ),
                     vcf::ValueType::Float => sample_genotype.insert(
                         f_k.to_string(),
-                        Value::Number(Number::from_f64(val.parse::<f64>().unwrap()).unwrap()),
+                        Value::Number(Number::from_f64(val.parse::<f64>()?).ok_or(VcfParserError::VariantParseError("parse error"))?),
                     ),
                     _ => sample_genotype.insert(f_k.to_string(), Value::String(val.to_string())),
                 };
             }
             genotype.insert(
-                str::from_utf8(&sample).unwrap().to_string(),
+                str::from_utf8(&sample)?.to_string(),
                 Value::Object(sample_genotype),
             );
         }
         // parse info
         let mut info = Map::new();
         for id in vcf_record.header().info_list() {
-            let field = vcf_record.header().info(id).unwrap();
-            let field_str = str::from_utf8(&field.id).unwrap();
+            let field = vcf_record.header().info(id).ok_or_else(|| VcfParserError::VariantParseError("field not found"))?;
+            let field_str = str::from_utf8(&field.id)?;
             let val = match vcf_record.info(id) {
                 Some(dat) => {
                     if *field.value_type == vcf::ValueType::Flag {
@@ -73,21 +75,21 @@ impl Variant {
                             Value::from(
                                 dat.iter()
                                     .map(|x| {
-                                        if str::from_utf8(x).unwrap() == "." {
-                                            Value::Null
+                                        if str::from_utf8(x)? == "." {
+                                            Ok(Value::Null)
                                         } else {
-                                            Value::from(Number::from(
-                                                str::from_utf8(x).unwrap().parse::<i64>().expect(&format!("parse error {}, {}", field_str, str::from_utf8(x).unwrap())),
-                                            ))
+                                            Ok(Value::from(Number::from(
+                                                str::from_utf8(x)?.parse::<i64>()?,
+                                            )))
                                         }
                                     })
-                                    .collect::<Vec<Value>>()[0].to_owned(),
+                                    .collect::<Result<Vec<Value>>>()?[0].to_owned(),
                             )
                         } else {
-                            if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
+                            if dat.len() == 0 || str::from_utf8(&dat[0])? == "." {
                                 Value::Null
                             } else {
-                                Value::from(str::from_utf8(&dat[0]).unwrap().parse::<i64>().unwrap())
+                                Value::from(str::from_utf8(&dat[0])?.parse::<i64>()?)
                             }
                         }
                     } else if *field.value_type == vcf::ValueType::Float {
@@ -95,21 +97,21 @@ impl Variant {
                             Value::from(
                                 dat.iter()
                                     .map(|x| {
-                                        if str::from_utf8(x).unwrap() == "." {
-                                            Value::Null
+                                        if str::from_utf8(x)? == "." {
+                                            Ok(Value::Null)
                                         } else {
-                                            Value::from(Number::from_f64(
-                                                str::from_utf8(x).unwrap().parse::<f64>().unwrap(),
-                                            ))
+                                            Ok(Value::from(Number::from_f64(
+                                                str::from_utf8(x)?.parse::<f64>()?,
+                                            )))
                                         }
                                     })
-                                    .collect::<Vec<Value>>()[0].to_owned(),
+                                    .collect::<Result<Vec<Value>>>()?[0].to_owned(),
                             )
                         } else {
-                            if dat.len() == 0 || str::from_utf8(&dat[0]).unwrap() == "." {
+                            if dat.len() == 0 || str::from_utf8(&dat[0])? == "." {
                                 Value::Null
                             } else {
-                                Value::from(str::from_utf8(&dat[0]).unwrap().parse::<f64>().unwrap_or_else(|_| panic!("parse error {}, {}", field_str, str::from_utf8(&dat[0]).unwrap())))
+                                Value::from(str::from_utf8(&dat[0])?.parse::<f64>()?)
                             }
                         }
                     } else if csq_headers.contains_key(field_str) {
@@ -117,28 +119,28 @@ impl Variant {
                             .map(|csq_field| {
                                 let csq_vec = csq_headers
                                     .get(field_str)
-                                    .unwrap()
+                                    .ok_or(VcfParserError::VariantParseError("field not found"))?
                                     .iter()
-                                    .zip(str::from_utf8(csq_field).unwrap().split("|"));
+                                    .zip(str::from_utf8(csq_field)?.split("|"));
                                 let mut csq = Map::new();
                                 for (k, v) in csq_vec {
                                     csq.insert(k.to_string(), utils::try_parse_number(v));
                                 }
-                                Value::Object(csq)
+                                Ok(Value::Object(csq))
                             })
-                            .collect::<Value>()
+                            .collect::<Result<Value>>()?
                     } else {
                         if *field.number == vcf::Number::Allele {
                             Value::from(
                                 dat.iter()
-                                    .map(|x| Value::String(str::from_utf8(x).unwrap().to_string()))
-                                    .collect::<Vec<Value>>()[0].clone(),
+                                    .map(|x| Ok(Value::String(str::from_utf8(x)?.to_string())))
+                                    .collect::<Result<Vec<Value>>>()?[0].clone(),
                             )
                         } else {
                             if dat.len() == 0 {
                                 Value::Null
                             } else {
-                                Value::String(str::from_utf8(&dat[0]).unwrap().to_string())
+                                Value::String(str::from_utf8(&dat[0])?.to_string())
                             }
                         }
                     }
@@ -150,7 +152,7 @@ impl Variant {
                         // if csq_header contains the field, parse it as csq. Values are all null.
                         _ if csq_headers.contains_key(field_str) => Value::Array(vec![csq_headers
                             .get(field_str)
-                            .unwrap()
+                            .ok_or(VcfParserError::VariantParseError("field not found"))?
                             .iter()
                             .map(|k| (k.to_string(), Value::Null))
                             .collect::<Map<String, Value>>()
@@ -159,35 +161,35 @@ impl Variant {
                     }
                 }
             };
-            info.insert(str::from_utf8(&field.id).unwrap().to_string(), val);
+            info.insert(str::from_utf8(&field.id)?.to_string(), val);
         }
-        Variant {
-            chromosome: str::from_utf8(&vcf_record.chromosome).unwrap().to_string(),
+        Ok(Variant {
+            chromosome: str::from_utf8(&vcf_record.chromosome)?.to_string(),
             position: vcf_record.position,
             // flatten id / filter / alternative
             id: vcf_record
                 .id
                 .iter()
-                .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>()
+                .map(|x| Ok(str::from_utf8(&x)?.to_string()))
+                .collect::<Result<Vec<String>>>()?
                 .join(";"),
             alternative: vcf_record
                 .alternative
                 .iter()
-                .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>()
+                .map(|x| Ok(str::from_utf8(&x)?.to_string()))
+                .collect::<Result<Vec<String>>>()?
                 .join(","),
             filter: vcf_record
                 .filter
                 .iter()
-                .map(|x| str::from_utf8(&x).unwrap().to_string())
-                .collect::<Vec<String>>()
+                .map(|x| Ok(str::from_utf8(&x)?.to_string()))
+                .collect::<Result<Vec<String>>>()?
                 .join(","),
-            reference: str::from_utf8(&vcf_record.reference).unwrap().to_string(),
+            reference: str::from_utf8(&vcf_record.reference)?.to_string(),
             qual: vcf_record.qual,
             info,
             genotype: genotype,
-        }
+        })
     }
 }
 
