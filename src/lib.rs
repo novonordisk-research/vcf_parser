@@ -385,17 +385,5 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_logic() -> Result<(), Box<dyn Error>> {
-
-        let exprs = [
-            (r#"foo = bar AND baz > 10"#, r#"{"AND":[{"name":"foo","op":"=","value":"bar"},{"name":"baz","op":">","value":10.0}]}"#),
-            (r#"(foo == bar or baz > 10) AND baz <= 5"#, r#"{"AND":[{"OR":[{"name":"foo","op":"==","value":"bar"},{"name":"baz","op":">","value":10.0}]},{"name":"baz","op":"<=","value":5.0}]}"#),
-        ];
-        for (expr, expected) in exprs.iter() {
-            let result = parser::parse_logic_expr(expr)?;
-            assert_eq!(result, serde_json::from_str::<serde_json::Value>(expected)?);
-        }
-        Ok(())
-    }
+    
 }

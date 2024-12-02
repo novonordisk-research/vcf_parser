@@ -132,6 +132,22 @@ fn boolean_condition<'a>() -> Parser<'a, u8, Value> {
         - space()
 }
 
+fn and_expression<'a>() -> Parser<'a, u8, Value> {
+    (boolean_condition() + and() * call(boolean_condition)).map(
+        |(boolean_condition, and_expression)| json!({
+            "AND": [boolean_condition, and_expression]
+        })
+    ) | boolean_condition()
+}
+
+fn or_expression<'a>() -> Parser<'a, u8, Value> {
+    (and_expression() + or() * call(and_expression)).map(
+        |(and_expression, or_expression)| json!({
+            "OR": [and_expression, or_expression]
+        })
+    ) | and_expression()
+}
+
 fn boolean_expression<'a>() -> Parser<'a, u8, Value> {
     (boolean_condition() + and_or() + call(boolean_expression)).map(
         |((boolean_condition, and_or_initial), boolean_expression)| json!({
@@ -143,5 +159,27 @@ fn boolean_expression<'a>() -> Parser<'a, u8, Value> {
 // Define the main parser function
 pub fn parse_logic_expr<'a>(input: &str) -> Result<Value, pom::Error> {
     //(space() * boolean_expression() - end()).parse(input.as_bytes())
-    (space() * boolean_expression() - end()).parse(input.as_bytes())
+    (space() * or_expression() - end()).parse(input.as_bytes())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_logic() -> Result<(), pom::Error> {
+
+        let exprs = [
+            (r#"foo = bar"#, r#"{"name":"foo","op":"=","value":"bar"}"#),
+            (r#"foo = bar AND baz > 10"#, r#"{"AND":[{"name":"foo","op":"=","value":"bar"},{"name":"baz","op":">","value":10.0}]}"#),
+            (r#"(foo == bar or baz > 10) AND baz <= 5"#, r#"{"AND":[{"OR":[{"name":"foo","op":"==","value":"bar"},{"name":"baz","op":">","value":10.0}]},{"name":"baz","op":"<=","value":5.0}]}"#),
+            (r#"baz <= 5 AND (foo == bar or baz > 10)"#, r#"{"AND":[{"name":"baz","op":"<=","value":5.0},{"OR":[{"name":"foo","op":"==","value":"bar"},{"name":"baz","op":">","value":10.0}]}]}"#),
+            (r#"foo == bar AND baz > 10 Or baz <= 5"#, r#"{"OR":[{"AND":[{"name":"foo","op":"==","value":"bar"},{"name":"baz","op":">","value":10.0}]},{"name":"baz","op":"<=","value":5.0}]}"#),
+            (r#"baz <= 5 or foo == bar AND baz > 10  "#, r#"{"OR":[{"name":"baz","op":"<=","value":5.0},{"AND":[{"name":"foo","op":"==","value":"bar"},{"name":"baz","op":">","value":10.0}]}]}"#),
+        ];
+        for (expr, expected) in exprs.iter() {
+            let result = parse_logic_expr(expr)?;
+            println!("{:?}", expr);
+            assert_eq!(result, serde_json::from_str::<serde_json::Value>(expected).unwrap());
+        }
+        Ok(())
+    }
 }
