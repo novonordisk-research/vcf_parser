@@ -77,7 +77,7 @@ pub fn run(args:Args)-> Result<(), Box<dyn Error>> {
         Some(inp) if inp.ends_with(".vcf.gz") => Box::new(BufReader::new(MultiGzDecoder::new(File::open(inp)?))),
         Some(rest) => Box::new(BufReader::new(File::open(rest)?))
     };
-    let vcf_parser = VcfParser::new(filters, args.fields, args.fields_join, args.columns, args.output_format, reader)?;
+    let vcf_parser = VcfParser::new(&filters, args.fields, args.fields_join, args.columns, args.output_format, reader)?;
 
     // if --list, print the headers and quit
     if args.list {

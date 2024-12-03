@@ -7,11 +7,11 @@ use vcf::VCFReader;
 use std::sync::Arc;
 use serde_json;
 use crate::utils;
-pub struct VcfParser<T>
+pub struct VcfParser<'a, T>
 where T: BufRead + Send + Sync,
 {
     /// filter to use for filtering variants
-    pub filters: serde_json::Value,
+    pub filters: &'a serde_json::Value,
     /// info fields have `info.` prefix, such as info.CSQ, info.VEP
     pub info_fields: Vec<String>,
     /// fields to join on, such as Feature,Transcript_id. Version numbers will be ignored.
@@ -27,11 +27,11 @@ where T: BufRead + Send + Sync,
     /// tsv headers
     pub tsv_headers: Vec<String>,
 }
-impl <T> VcfParser <T>
+impl<'a, T> VcfParser<'a, T>
 where T: BufRead + Send + Sync,
 {
     pub fn new(
-        filters: serde_json::Value,
+        filters: &'a serde_json::Value,
         fields: Vec<String>,
         fields_join: Vec<String>,
         columns: Option<Vec<String>>,
